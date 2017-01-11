@@ -8,6 +8,7 @@
   <artifactId>nukleus-ws</artifactId>
   <version>develop-SNAPSHOT</version>
   <name>WebSocket Nukleus Implementation</name>
+  <description>WebSocket Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-ws.java</url>
 
   <licenses>

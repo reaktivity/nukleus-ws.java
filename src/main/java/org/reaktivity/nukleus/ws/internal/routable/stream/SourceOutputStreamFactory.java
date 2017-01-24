@@ -31,7 +31,7 @@ import org.reaktivity.nukleus.ws.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.FrameFW;
 import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
-public final class ClientInitialStreamFactory
+public final class SourceOutputStreamFactory
 {
     private final FrameFW frameRO = new FrameFW();
 
@@ -42,32 +42,32 @@ public final class ClientInitialStreamFactory
     private final Source source;
     private final LongSupplier supplyTargetId;
     private final LongFunction<List<Route>> supplyRoutes;
-    private final LongObjectBiConsumer<Correlation> correlateInitial;
+    private final LongObjectBiConsumer<Correlation> correlateNew;
 
-    public ClientInitialStreamFactory(
+    public SourceOutputStreamFactory(
         Source source,
         LongFunction<List<Route>> supplyRoutes,
         LongSupplier supplyTargetId,
-        LongObjectBiConsumer<Correlation> correlateInitial)
+        LongObjectBiConsumer<Correlation> correlateNew)
     {
         this.source = source;
         this.supplyTargetId = supplyTargetId;
         this.supplyRoutes = supplyRoutes;
-        this.correlateInitial = correlateInitial;
+        this.correlateNew = correlateNew;
     }
 
     public MessageHandler newStream()
     {
-        return new ClientInitialStream()::handleStream;
+        return new SourceOutputStream()::handleStream;
     }
 
-    private final class ClientInitialStream
+    private final class SourceOutputStream
     {
         private MessageHandler currentState;
 
         private long sourceId;
 
-        private ClientInitialStream()
+        private SourceOutputStream()
         {
             nextState(this::beforeBegin);
         }

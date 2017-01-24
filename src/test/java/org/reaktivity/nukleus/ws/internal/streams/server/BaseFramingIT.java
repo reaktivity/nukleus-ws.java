@@ -33,8 +33,8 @@ import org.reaktivity.reaktor.test.NukleusRule;
 public class BaseFramingIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("control", "org/reaktivity/specification/nukleus/ws/control")
-            .addScriptRoot("streams", "org/reaktivity/specification/nukleus/ws/streams/framing");
+        .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
+        .addScriptRoot("streams", "org/reaktivity/specification/nukleus/ws/streams/framing");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
 
@@ -45,35 +45,35 @@ public class BaseFramingIT
         .counterValuesBufferCapacity(1024)
         .streams("ws", "source")
         .streams("target", "ws#source")
-        .streams("ws", "replySource")
-        .streams("replyTarget", "ws#replySource");
+        .streams("ws", "target")
+        .streams("source", "ws#target");
 
     @Rule
     public final TestRule chain = outerRule(nukleus).around(k3po).around(timeout);
 
     @Test
     @Specification({
-        "${control}/bind/server/initial/controller",
-        "${control}/bind/server/reply/controller",
-        "${control}/route/server/initial/controller",
-        "${control}/route/server/reply/controller",
+        "${route}/input/new/controller",
         "${streams}/echo.binary.payload.length.0/server/source",
         "${streams}/echo.binary.payload.length.0/server/target" })
     public void shouldEchoBinaryFrameWithPayloadLength0() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_INPUT");
+        k3po.notifyBarrier("ROUTED_OUTPUT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${control}/bind/server/initial/controller",
-        "${control}/bind/server/reply/controller",
-        "${control}/route/server/initial/controller",
-        "${control}/route/server/reply/controller",
+        "${route}/input/new/controller",
         "${streams}/echo.binary.payload.length.125/server/source",
         "${streams}/echo.binary.payload.length.125/server/target" })
     public void shouldEchoBinaryFrameWithPayloadLength125() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_INPUT");
+        k3po.notifyBarrier("ROUTED_OUTPUT");
         k3po.finish();
     }
 

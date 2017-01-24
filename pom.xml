@@ -46,10 +46,10 @@
     <junit.version>4.12</junit.version>
     <k3po.version>3.0.0-alpha-54</k3po.version>
     <jmh.version>1.12</jmh.version>
-    <nukleus.plugin.version>0.3</nukleus.plugin.version>
+    <nukleus.plugin.version>0.6.1</nukleus.plugin.version>
     <nukleus.version>0.2</nukleus.version>
-    <nukleus.http.spec.version>0.3</nukleus.http.spec.version>
-    <nukleus.ws.spec.version>0.2</nukleus.ws.spec.version>
+    <nukleus.http.spec.version>0.4</nukleus.http.spec.version>
+    <nukleus.ws.spec.version>0.3</nukleus.ws.spec.version>
     <reaktor.test.version>0.1</reaktor.test.version>
     <reaktor.version>0.1</reaktor.version>
   </properties>
@@ -127,7 +127,7 @@
         <artifactId>nukleus-maven-plugin</artifactId>
         <version>${nukleus.plugin.version}</version>
         <configuration>
-          <scopeNames>common http ws</scopeNames>
+          <scopeNames>core http ws</scopeNames>
           <packageName>org.reaktivity.nukleus.ws.internal.types</packageName>
         </configuration>
         <executions>

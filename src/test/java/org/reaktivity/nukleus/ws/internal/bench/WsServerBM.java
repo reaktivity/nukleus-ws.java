@@ -21,8 +21,8 @@ import static org.agrona.BitUtil.SIZE_OF_INT;
 import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.reaktivity.nukleus.Configuration.DIRECTORY_PROPERTY_NAME;
 import static org.reaktivity.nukleus.Configuration.STREAMS_BUFFER_CAPACITY_PROPERTY_NAME;
-import static org.reaktivity.nukleus.ws.internal.router.RouteKind.SERVER_INITIAL;
-import static org.reaktivity.nukleus.ws.internal.router.RouteKind.SERVER_REPLY;
+import static org.reaktivity.nukleus.ws.internal.types.control.Role.INPUT;
+import static org.reaktivity.nukleus.ws.internal.types.control.State.NEW;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
@@ -94,19 +94,18 @@ public class WsServerBM
 
     private final HttpBeginExFW.Builder httpBeginExRW = new HttpBeginExFW.Builder();
 
-    private WsStreams initialStreams;
-    private WsStreams replyStreams;
+    private WsStreams sourceInputStreams;
+    private WsStreams sourceOutputEstStreams;
 
     private MutableDirectBuffer throttleBuffer;
 
-    private long initialRef;
-    private long replyRef;
+    private long sourceInputRef;
+    private long targetInputRef;
 
-    private long targetRef;
-    private long sourceId;
+    private long sourceInputId;
     private DataFW data;
 
-    private MessageHandler replyHandler;
+    private MessageHandler sourceOutputEstHandler;
 
     @Setup(Level.Trial)
     public void reinit() throws Exception
@@ -114,18 +113,14 @@ public class WsServerBM
         final Random random = new Random();
         final WsController controller = reaktor.controller(WsController.class);
 
-        this.initialRef = controller.bind(SERVER_INITIAL.kind()).get();
-        this.replyRef = controller.bind(SERVER_REPLY.kind()).get();
-        this.targetRef = random.nextLong();
-        this.replyHandler = this::processBegin;
+        this.targetInputRef = random.nextLong();
+        this.sourceInputRef = controller.route(INPUT, NEW, "source", 0L, "target", targetInputRef, null).get();
 
-        controller.route("source", initialRef, "ws", replyRef, null).get();
-        controller.route("ws", replyRef, "target", targetRef, null).get();
+        this.sourceInputStreams = controller.streams("source");
+        this.sourceOutputEstStreams = controller.streams("ws", "target");
 
-        this.initialStreams = controller.streams("source");
-        this.replyStreams = controller.streams("ws", "target");
-
-        this.sourceId = random.nextLong();
+        this.sourceInputId = random.nextLong();
+        this.sourceOutputEstHandler = this::processBegin;
 
         final Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers = hs ->
         {
@@ -143,13 +138,13 @@ public class WsServerBM
         final AtomicBuffer writeBuffer = new UnsafeBuffer(new byte[256]);
 
         BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .streamId(sourceId)
-                .referenceId(initialRef)
+                .streamId(sourceInputId)
+                .referenceId(sourceInputRef)
                 .correlationId(random.nextLong())
                 .extension(e -> e.set(visitHttpBeginEx(headers)))
                 .build();
 
-        this.initialStreams.writeStreams(begin.typeId(), begin.buffer(), begin.offset(), begin.length());
+        this.sourceInputStreams.writeStreams(begin.typeId(), begin.buffer(), begin.offset(), begin.length());
 
         byte[] charBytes = "Hello, world".getBytes(StandardCharsets.UTF_8);
 
@@ -174,7 +169,7 @@ public class WsServerBM
         sendArray[17] = (byte) (charBytes[11] ^ sendArray[5]);
 
         this.data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                          .streamId(sourceId)
+                          .streamId(sourceInputId)
                           .payload(p -> p.set(sendArray))
                           .extension(e -> e.reset())
                           .build();
@@ -187,17 +182,13 @@ public class WsServerBM
     {
         WsController controller = reaktor.controller(WsController.class);
 
-        controller.unroute("source", initialRef, "ws", replyRef, null).get();
-        controller.unroute("ws", replyRef, "target", targetRef, null).get();
+        controller.unroute(INPUT, NEW, "source", sourceInputRef, "target", targetInputRef, null).get();
 
-        controller.unbind(initialRef).get();
-        controller.unbind(replyRef).get();
+        this.sourceInputStreams.close();
+        this.sourceInputStreams = null;
 
-        this.initialStreams.close();
-        this.initialStreams = null;
-
-        this.replyStreams.close();
-        this.replyStreams = null;
+        this.sourceOutputEstStreams.close();
+        this.sourceOutputEstStreams = null;
     }
 
     @Benchmark
@@ -206,13 +197,13 @@ public class WsServerBM
     public void writer(Control control) throws Exception
     {
         while (!control.stopMeasurement &&
-               !initialStreams.writeStreams(data.typeId(), data.buffer(), 0, data.limit()))
+               !sourceInputStreams.writeStreams(data.typeId(), data.buffer(), 0, data.limit()))
         {
             Thread.yield();
         }
 
         while (!control.stopMeasurement &&
-                initialStreams.readThrottle((t, b, o, l) -> {}) == 0)
+                sourceInputStreams.readThrottle((t, b, o, l) -> {}) == 0)
         {
             Thread.yield();
         }
@@ -224,7 +215,7 @@ public class WsServerBM
     public void reader(Control control) throws Exception
     {
         while (!control.stopMeasurement &&
-               replyStreams.readStreams(this::handleReply) == 0)
+               sourceOutputEstStreams.readStreams(this::handleReply) == 0)
         {
             Thread.yield();
         }
@@ -236,7 +227,7 @@ public class WsServerBM
         int index,
         int length)
     {
-        replyHandler.onMessage(msgTypeId, buffer, index, length);
+        sourceOutputEstHandler.onMessage(msgTypeId, buffer, index, length);
     }
 
     private void processBegin(
@@ -249,7 +240,7 @@ public class WsServerBM
         final long streamId = beginRO.streamId();
         doWindow(streamId, 8192);
 
-        this.replyHandler = this::processData;
+        this.sourceOutputEstHandler = this::processData;
     }
 
     private void processData(
@@ -275,7 +266,7 @@ public class WsServerBM
                 .update(update)
                 .build();
 
-        replyStreams.writeThrottle(window.typeId(), window.buffer(), window.offset(), window.length());
+        sourceOutputEstStreams.writeThrottle(window.typeId(), window.buffer(), window.offset(), window.length());
     }
 
     private Flyweight.Builder.Visitor visitHttpBeginEx(

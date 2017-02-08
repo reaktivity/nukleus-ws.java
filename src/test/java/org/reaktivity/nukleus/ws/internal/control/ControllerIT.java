@@ -62,7 +62,7 @@ public class ControllerIT
         k3po.start();
 
         controller.controller(WsController.class)
-                  .route(INPUT, NEW, "source", 0L, "target", targetRef, "sub-protocol")
+                  .routeInputNew("source", 0L, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.finish();
@@ -79,7 +79,7 @@ public class ControllerIT
         k3po.start();
 
         controller.controller(WsController.class)
-                  .route(OUTPUT, NEW, "source", 0L, "target", targetRef, "sub-protocol")
+                  .routeOutputNew("source", 0L, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.finish();
@@ -94,7 +94,7 @@ public class ControllerIT
         k3po.start();
 
         controller.controller(WsController.class)
-                  .route(OUTPUT, ESTABLISHED, "target", 0L, "source", 0L, null)
+                  .routeOutputEstablished("target", 0L, "source", 0L, null)
                   .get();
 
         k3po.finish();
@@ -109,7 +109,7 @@ public class ControllerIT
         k3po.start();
 
         controller.controller(WsController.class)
-                  .route(INPUT, ESTABLISHED, "target", 0L, "source", 0L, null)
+                  .routeInputEstablished("target", 0L, "source", 0L, null)
                   .get();
 
         k3po.finish();
@@ -127,7 +127,7 @@ public class ControllerIT
         k3po.start();
 
         long sourceRef = controller.controller(WsController.class)
-                  .route(INPUT, NEW, "source", 0L, "target", targetRef, "sub-protocol")
+                  .routeInputNew("source", 0L, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.notifyBarrier("ROUTED_INPUT");
@@ -151,7 +151,7 @@ public class ControllerIT
         k3po.start();
 
         long sourceRef = controller.controller(WsController.class)
-                  .route(OUTPUT, NEW, "source", 0L, "target", targetRef, "sub-protocol")
+                  .routeOutputNew("source", 0L, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.notifyBarrier("ROUTED_OUTPUT");
@@ -173,7 +173,7 @@ public class ControllerIT
         k3po.start();
 
         long targetRef = controller.controller(WsController.class)
-                  .route(OUTPUT, ESTABLISHED, "target", 0L, "source", 0L, null)
+                  .routeOutputEstablished("target", 0L, "source", 0L, null)
                   .get();
 
         k3po.notifyBarrier("ROUTED_OUTPUT");
@@ -195,7 +195,7 @@ public class ControllerIT
         k3po.start();
 
         long targetRef  = controller.controller(WsController.class)
-                  .route(INPUT, ESTABLISHED, "target", 0L, "source", 0L, null)
+                  .routeInputEstablished("target", 0L, "source", 0L, null)
                   .get();
 
         k3po.notifyBarrier("ROUTED_INPUT");

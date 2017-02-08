@@ -114,7 +114,7 @@ public class WsServerBM
         final WsController controller = reaktor.controller(WsController.class);
 
         this.targetInputRef = random.nextLong();
-        this.sourceInputRef = controller.route(INPUT, NEW, "source", 0L, "target", targetInputRef, null).get();
+        this.sourceInputRef = controller.routeInputNew("source", 0L, "target", targetInputRef, null).get();
 
         this.sourceInputStreams = controller.streams("source");
         this.sourceOutputEstStreams = controller.streams("ws", "target");

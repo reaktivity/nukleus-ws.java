@@ -96,7 +96,67 @@ public final class WsController implements Controller
         return "ws";
     }
 
-    public CompletableFuture<Long> route(
+    public CompletableFuture<Long> routeInputNone(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return route(Role.INPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Long> routeInputNew(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return route(Role.INPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Long> routeInputEstablished(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return route(Role.INPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Long> routeOutputNone(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return route(Role.OUTPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Long> routeOutputNew(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return route(Role.OUTPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Long> routeOutputEstablished(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return route(Role.OUTPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+    }
+
+    private CompletableFuture<Long> route(
         Role role,
         State state,
         String source,

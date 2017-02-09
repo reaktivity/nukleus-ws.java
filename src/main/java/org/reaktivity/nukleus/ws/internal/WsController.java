@@ -192,7 +192,67 @@ public final class WsController implements Controller
         return promise;
     }
 
-    public CompletableFuture<Void> unroute(
+    public CompletableFuture<Void> unrouteInputNone(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return unroute(Role.INPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteInputNew(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return unroute(Role.INPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteInputEstablished(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return unroute(Role.INPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteOutputNone(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return unroute(Role.OUTPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteOutputNew(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return unroute(Role.OUTPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteOutputEstablished(
+            String source,
+            long sourceRef,
+            String target,
+            long targetRef,
+            String protocol)
+    {
+        return unroute(Role.OUTPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+    }
+
+    private CompletableFuture<Void> unroute(
         Role role,
         State state,
         String source,

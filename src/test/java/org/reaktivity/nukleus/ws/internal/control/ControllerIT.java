@@ -17,10 +17,6 @@ package org.reaktivity.nukleus.ws.internal.control;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.ws.internal.types.control.Role.INPUT;
-import static org.reaktivity.nukleus.ws.internal.types.control.Role.OUTPUT;
-import static org.reaktivity.nukleus.ws.internal.types.control.State.ESTABLISHED;
-import static org.reaktivity.nukleus.ws.internal.types.control.State.NEW;
 
 import java.util.Random;
 
@@ -133,7 +129,7 @@ public class ControllerIT
         k3po.notifyBarrier("ROUTED_INPUT");
 
         controller.controller(WsController.class)
-                  .unroute(INPUT, NEW, "source", sourceRef, "target", targetRef, "sub-protocol")
+                  .unrouteInputNew("source", sourceRef, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.finish();
@@ -157,7 +153,7 @@ public class ControllerIT
         k3po.notifyBarrier("ROUTED_OUTPUT");
 
         controller.controller(WsController.class)
-                  .unroute(OUTPUT, NEW, "source", sourceRef, "target", targetRef, "sub-protocol")
+                  .unrouteOutputNew("source", sourceRef, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.finish();
@@ -179,7 +175,7 @@ public class ControllerIT
         k3po.notifyBarrier("ROUTED_OUTPUT");
 
         controller.controller(WsController.class)
-                  .unroute(OUTPUT, ESTABLISHED, "target", targetRef, "source", 0L, null)
+                  .unrouteOutputEstablished("target", targetRef, "source", 0L, null)
                   .get();
 
         k3po.finish();
@@ -201,7 +197,7 @@ public class ControllerIT
         k3po.notifyBarrier("ROUTED_INPUT");
 
         controller.controller(WsController.class)
-                  .unroute(INPUT, ESTABLISHED, "target", targetRef, "source", 0L, null)
+                  .unrouteInputEstablished("target", targetRef, "source", 0L, null)
                   .get();
 
         k3po.finish();

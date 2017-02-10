@@ -21,8 +21,6 @@ import static org.agrona.BitUtil.SIZE_OF_INT;
 import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.reaktivity.nukleus.Configuration.DIRECTORY_PROPERTY_NAME;
 import static org.reaktivity.nukleus.Configuration.STREAMS_BUFFER_CAPACITY_PROPERTY_NAME;
-import static org.reaktivity.nukleus.ws.internal.types.control.Role.INPUT;
-import static org.reaktivity.nukleus.ws.internal.types.control.State.NEW;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
@@ -114,7 +112,7 @@ public class WsServerBM
         final WsController controller = reaktor.controller(WsController.class);
 
         this.targetInputRef = random.nextLong();
-        this.sourceInputRef = controller.route(INPUT, NEW, "source", 0L, "target", targetInputRef, null).get();
+        this.sourceInputRef = controller.routeInputNew("source", 0L, "target", targetInputRef, null).get();
 
         this.sourceInputStreams = controller.streams("source");
         this.sourceOutputEstStreams = controller.streams("ws", "target");
@@ -182,7 +180,7 @@ public class WsServerBM
     {
         WsController controller = reaktor.controller(WsController.class);
 
-        controller.unroute(INPUT, NEW, "source", sourceInputRef, "target", targetInputRef, null).get();
+        controller.unrouteInputNew("source", sourceInputRef, "target", targetInputRef, null).get();
 
         this.sourceInputStreams.close();
         this.sourceInputStreams = null;

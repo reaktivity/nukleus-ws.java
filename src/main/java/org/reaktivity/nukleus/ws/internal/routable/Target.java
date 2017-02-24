@@ -148,7 +148,7 @@ public final class Target implements Nukleus
                 .extension(e -> e.set(visitWsBeginEx(protocol)))
                 .build();
 
-        streamsBuffer.write(begin.typeId(), begin.buffer(), begin.offset(), begin.length());
+        streamsBuffer.write(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
     }
 
     public int doWsData(
@@ -164,9 +164,9 @@ public final class Target implements Nukleus
                 .extension(e -> e.set(visitWsDataEx(flags)))
                 .build();
 
-        streamsBuffer.write(data.typeId(), data.buffer(), data.offset(), data.length());
+        streamsBuffer.write(data.typeId(), data.buffer(), data.offset(), data.sizeof());
 
-        return data.length();
+        return data.sizeof();
     }
 
     public void doWsEnd(
@@ -178,7 +178,7 @@ public final class Target implements Nukleus
                 .extension(e -> e.set(visitWsEndEx(status)))
                 .build();
 
-        streamsBuffer.write(end.typeId(), end.buffer(), end.offset(), end.length());
+        streamsBuffer.write(end.typeId(), end.buffer(), end.offset(), end.sizeof());
     }
 
     public void doHttpBegin(
@@ -194,7 +194,7 @@ public final class Target implements Nukleus
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();
 
-        streamsBuffer.write(begin.typeId(), begin.buffer(), begin.offset(), begin.length());
+        streamsBuffer.write(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
     }
 
     public void doHttpData(
@@ -203,17 +203,17 @@ public final class Target implements Nukleus
         int flagsAndOpcode)
     {
         WsFrameFW wsFrame = wsFrameRW.wrap(writeBuffer, SIZE_OF_LONG + SIZE_OF_BYTE, writeBuffer.capacity())
-                .payload(payload.buffer(), payload.offset() + SIZE_OF_BYTE, payload.length() - SIZE_OF_BYTE)
+                .payload(payload.buffer(), payload.offset(), payload.sizeof())
                 .flagsAndOpcode(flagsAndOpcode)
                 .build();
 
         DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .payload(p -> p.set(wsFrame.buffer(), wsFrame.offset(), wsFrame.length()))
+                .payload(p -> p.set(wsFrame.buffer(), wsFrame.offset(), wsFrame.sizeof()))
                 .extension(e -> e.reset())
                 .build();
 
-        streamsBuffer.write(data.typeId(), data.buffer(), data.offset(), data.length());
+        streamsBuffer.write(data.typeId(), data.buffer(), data.offset(), data.sizeof());
     }
 
     public void doHttpEnd(
@@ -224,7 +224,7 @@ public final class Target implements Nukleus
                 .extension(e -> e.reset())
                 .build();
 
-        streamsBuffer.write(end.typeId(), end.buffer(), end.offset(), end.length());
+        streamsBuffer.write(end.typeId(), end.buffer(), end.offset(), end.sizeof());
     }
 
     private Flyweight.Builder.Visitor visitWsBeginEx(
@@ -234,7 +234,7 @@ public final class Target implements Nukleus
             wsBeginExRW.wrap(buffer, offset, limit)
                        .protocol(protocol)
                        .build()
-                       .length();
+                       .sizeof();
     }
 
     private Flyweight.Builder.Visitor visitWsDataEx(
@@ -244,7 +244,7 @@ public final class Target implements Nukleus
             wsDataExRW.wrap(buffer, offset, limit)
                       .flags((byte) flags)
                       .build()
-                      .length();
+                      .sizeof();
     }
 
     private Flyweight.Builder.Visitor visitWsEndEx(
@@ -254,7 +254,7 @@ public final class Target implements Nukleus
             wsEndExRW.wrap(buffer, offset, limit)
                      .code((short) status)
                      .build()
-                     .length();
+                     .sizeof();
     }
 
     private Flyweight.Builder.Visitor visitHttpBeginEx(
@@ -264,6 +264,6 @@ public final class Target implements Nukleus
             httpBeginExRW.wrap(buffer, offset, limit)
                          .headers(headers)
                          .build()
-                         .length();
+                         .sizeof();
     }
 }

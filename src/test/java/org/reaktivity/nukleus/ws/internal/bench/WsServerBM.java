@@ -142,7 +142,7 @@ public class WsServerBM
                 .extension(e -> e.set(visitHttpBeginEx(headers)))
                 .build();
 
-        this.sourceInputStreams.writeStreams(begin.typeId(), begin.buffer(), begin.offset(), begin.length());
+        this.sourceInputStreams.writeStreams(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
 
         byte[] charBytes = "Hello, world".getBytes(StandardCharsets.UTF_8);
 
@@ -251,7 +251,7 @@ public class WsServerBM
         final long streamId = dataRO.streamId();
         final OctetsFW payload = dataRO.payload();
 
-        final int update = payload.length();
+        final int update = payload.sizeof();
         doWindow(streamId, update);
     }
 
@@ -264,7 +264,7 @@ public class WsServerBM
                 .update(update)
                 .build();
 
-        sourceOutputEstStreams.writeThrottle(window.typeId(), window.buffer(), window.offset(), window.length());
+        sourceOutputEstStreams.writeThrottle(window.typeId(), window.buffer(), window.offset(), window.sizeof());
     }
 
     private Flyweight.Builder.Visitor visitHttpBeginEx(
@@ -274,7 +274,7 @@ public class WsServerBM
             httpBeginExRW.wrap(buffer, offset, limit)
                          .headers(headers)
                          .build()
-                         .length();
+                         .sizeof();
     }
 
     public static void main(String[] args) throws RunnerException

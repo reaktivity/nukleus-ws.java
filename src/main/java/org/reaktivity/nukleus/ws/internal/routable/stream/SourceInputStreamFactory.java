@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.ws.internal.routable.stream;
 import static java.lang.Integer.highestOneBit;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.agrona.BitUtil.SIZE_OF_BYTE;
 import static org.agrona.BitUtil.SIZE_OF_SHORT;
 import static org.reaktivity.nukleus.ws.internal.routable.Route.protocolMatches;
 import static org.reaktivity.nukleus.ws.internal.router.RouteKind.OUTPUT_ESTABLISHED;
@@ -340,7 +339,7 @@ public final class SourceInputStreamFactory
             final OctetsFW httpPayload)
         {
             final DirectBuffer buffer = httpPayload.buffer();
-            final int offset = httpPayload.offset() + SIZE_OF_BYTE;
+            final int offset = httpPayload.offset();
             final int limit = httpPayload.limit();
 
             int bytesWritten = 0;

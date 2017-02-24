@@ -227,7 +227,7 @@ public final class TargetOutputEstablishedStreamFactory
 
             int flags = 0;
             final OctetsFW extension = dataRO.extension();
-            if (extension.length() > 0)
+            if (extension.sizeof() > 0)
             {
                 final WsDataExFW wsDataEx = extension.get(wsDataExRO::wrap);
                 flags = wsDataEx.flags();
@@ -260,7 +260,7 @@ public final class TargetOutputEstablishedStreamFactory
 
                 // TODO: auto-exclude header if value is null
                 final OctetsFW extension = beginRO.extension();
-                if (extension.length() > 0)
+                if (extension.sizeof() > 0)
                 {
                     final WsBeginExFW wsBeginEx = extension.get(wsBeginExRO::wrap);
                     final String wsProtocol = wsBeginEx.protocol().asString();

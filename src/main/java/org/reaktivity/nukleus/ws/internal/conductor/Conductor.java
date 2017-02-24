@@ -85,7 +85,7 @@ public final class Conductor implements Nukleus
                                  .correlationId(correlationId)
                                  .build();
 
-        conductorResponses.transmit(errorRO.typeId(), errorRO.buffer(), errorRO.offset(), errorRO.length());
+        conductorResponses.transmit(errorRO.typeId(), errorRO.buffer(), errorRO.offset(), errorRO.sizeof());
     }
 
     public void onRoutedResponse(
@@ -97,7 +97,7 @@ public final class Conductor implements Nukleus
                                     .sourceRef(sourceRef)
                                     .build();
 
-        conductorResponses.transmit(routedRO.typeId(), routedRO.buffer(), routedRO.offset(), routedRO.length());
+        conductorResponses.transmit(routedRO.typeId(), routedRO.buffer(), routedRO.offset(), routedRO.sizeof());
     }
 
     public void onUnroutedResponse(
@@ -107,7 +107,7 @@ public final class Conductor implements Nukleus
                                           .correlationId(correlationId)
                                           .build();
 
-        conductorResponses.transmit(unroutedRO.typeId(), unroutedRO.buffer(), unroutedRO.offset(), unroutedRO.length());
+        conductorResponses.transmit(unroutedRO.typeId(), unroutedRO.buffer(), unroutedRO.offset(), unroutedRO.sizeof());
     }
 
     private void handleCommand(
@@ -171,7 +171,7 @@ public final class Conductor implements Nukleus
     private String protocol(
         OctetsFW extension)
     {
-        if (extension.length() == 0)
+        if (extension.sizeof() == 0)
         {
             return null;
         }

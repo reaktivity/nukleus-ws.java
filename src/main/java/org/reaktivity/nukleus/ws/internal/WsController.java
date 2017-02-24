@@ -244,7 +244,7 @@ public final class WsController implements Controller
             routeExRW.wrap(buffer, offset, limit)
                      .protocol(protocol)
                      .build()
-                     .length();
+                     .sizeof();
     }
 
     private int handleResponse(
@@ -375,7 +375,7 @@ public final class WsController implements Controller
                                  .extension(b -> b.set(visitRouteEx(protocol)))
                                  .build();
 
-        if (!conductorCommands.write(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.length()))
+        if (!conductorCommands.write(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.sizeof()))
         {
             commandSendFailed(promise);
         }
@@ -411,7 +411,7 @@ public final class WsController implements Controller
                                        .extension(b -> b.set(visitRouteEx(protocol)))
                                        .build();
 
-        if (!conductorCommands.write(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.length()))
+        if (!conductorCommands.write(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.sizeof()))
         {
             commandSendFailed(promise);
         }

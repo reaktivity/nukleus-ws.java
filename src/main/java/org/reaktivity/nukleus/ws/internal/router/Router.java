@@ -22,13 +22,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.agrona.collections.Long2ObjectHashMap;
-import org.agrona.collections.LongHashSet;
 import org.agrona.concurrent.status.AtomicCounter;
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.Reaktive;
 import org.reaktivity.nukleus.ws.internal.Context;
 import org.reaktivity.nukleus.ws.internal.conductor.Conductor;
 import org.reaktivity.nukleus.ws.internal.routable.Routable;
+import org.reaktivity.nukleus.ws.internal.types.control.Role;
+import org.reaktivity.nukleus.ws.internal.types.control.State;
 
 @Reaktive
 public final class Router extends Nukleus.Composite
@@ -36,9 +37,9 @@ public final class Router extends Nukleus.Composite
     private static final Pattern SOURCE_NAME = Pattern.compile("([^#]+).*");
 
     private final Context context;
-    private final LongHashSet referenceIds;
     private final Map<String, Routable> routables;
     private final Long2ObjectHashMap<Correlation> correlations;
+    private final AtomicCounter routesSourced;
 
     private Conductor conductor;
 
@@ -46,9 +47,9 @@ public final class Router extends Nukleus.Composite
         Context context)
     {
         this.context = context;
-        this.referenceIds = new LongHashSet(-1L);
         this.routables = new HashMap<>();
         this.correlations = new Long2ObjectHashMap<>();
+        this.routesSourced = context.counters().routesSourced();
     }
 
     public void setConductor(Conductor conductor)
@@ -62,48 +63,24 @@ public final class Router extends Nukleus.Composite
         return "router";
     }
 
-    public void doBind(
-        long correlationId,
-        int kind)
-    {
-        final AtomicCounter targetsBound = context.counters().targetsBound();
-
-        final RouteKind routeKind = RouteKind.of(kind);
-        final long referenceId = routeKind.nextRef(targetsBound);
-
-        if (referenceIds.add(referenceId))
-        {
-            conductor.onBoundResponse(correlationId, referenceId);
-        }
-        else
-        {
-            conductor.onErrorResponse(correlationId);
-        }
-    }
-
-    public void doUnbind(
-        long correlationId,
-        long referenceId)
-    {
-        if (referenceIds.remove(referenceId))
-        {
-            conductor.onUnboundResponse(correlationId);
-        }
-        else
-        {
-            conductor.onErrorResponse(correlationId);
-        }
-    }
-
     public void doRoute(
         long correlationId,
+        Role role,
+        State state,
         String sourceName,
         long sourceRef,
         String targetName,
         long targetRef,
         String protocol)
     {
-        if (referenceIds.contains(sourceRef) && RouteKind.valid(sourceRef))
+        final RouteKind routeKind = RouteKind.valueOf(role, state);
+
+        if (sourceRef == 0L)
+        {
+            sourceRef = routeKind.nextRef(routesSourced);
+        }
+
+        if (RouteKind.match(sourceRef) == routeKind)
         {
             Routable routable = routables.computeIfAbsent(sourceName, this::newRoutable);
             routable.doRoute(correlationId, sourceRef, targetName, targetRef, protocol);
@@ -116,6 +93,8 @@ public final class Router extends Nukleus.Composite
 
     public void doUnroute(
         long correlationId,
+        Role role,
+        State state,
         String sourceName,
         long sourceRef,
         String targetName,
@@ -123,7 +102,7 @@ public final class Router extends Nukleus.Composite
         String protocol)
     {
         final Routable routable = routables.get(sourceName);
-        if (routable != null && referenceIds.contains(sourceRef))
+        if (routable != null)
         {
             routable.doUnroute(correlationId, sourceRef, targetName, targetRef, protocol);
         }
@@ -165,6 +144,6 @@ public final class Router extends Nukleus.Composite
     private Routable newRoutable(
         String sourceName)
     {
-        return include(new Routable(context, conductor, sourceName, correlations::put, correlations::remove));
+        return include(new Routable(context, conductor, sourceName, correlations::put, correlations::get, correlations::remove));
     }
 }

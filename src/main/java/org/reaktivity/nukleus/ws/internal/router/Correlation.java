@@ -15,24 +15,42 @@
  */
 package org.reaktivity.nukleus.ws.internal.router;
 
+import static java.util.Objects.requireNonNull;
+
 import java.util.Objects;
 
 public class Correlation
 {
     private final long id;
+    private final String source;
+    private final RouteKind established;
     private final String hash;
 
     public Correlation(
         long id,
+        String source,
+        RouteKind established,
         String hash)
     {
         this.id = id;
+        this.source = requireNonNull(source, "source");
+        this.established = requireNonNull(established, "established");
         this.hash = hash;
     }
 
     public long id()
     {
         return id;
+    }
+
+    public String source()
+    {
+        return source;
+    }
+
+    public RouteKind established()
+    {
+        return established;
     }
 
     public String hash()
@@ -43,8 +61,10 @@ public class Correlation
     @Override
     public int hashCode()
     {
-        int result = hash.hashCode();
-        result = 31 * result + Long.hashCode(id);
+        int result = Long.hashCode(id);
+        result = 31 * result + source.hashCode();
+        result = 31 * result + established.hashCode();
+        result = 31 * result + hash.hashCode();
 
         return result;
     }
@@ -60,12 +80,14 @@ public class Correlation
 
         Correlation that = (Correlation) obj;
         return this.id == that.id &&
+                this.established == that.established &&
+                Objects.equals(this.source, that.source) &&
                 Objects.equals(this.hash, that.hash);
     }
 
     @Override
     public String toString()
     {
-        return String.format("[id=%d, hash=\"%s\"]", id, hash);
+        return String.format("[id=%d, source=\"%s\", established=%s, hash=\"%s\"]", id, source, established, hash);
     }
 }

@@ -17,6 +17,8 @@ package org.reaktivity.nukleus.ws.internal.types.stream;
 
 import static java.lang.Integer.highestOneBit;
 
+import java.nio.ByteOrder;
+
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -88,7 +90,7 @@ public final class WsFrameFW extends Flyweight
     @Override
     public int limit()
     {
-        return payloadOffset() + lengthValue();
+        return payloadOffset() + length();
     }
 
     @Override
@@ -96,7 +98,7 @@ public final class WsFrameFW extends Flyweight
     {
         super.wrap(buffer, offset, maxLimit);
 
-        payloadRO.wrap(buffer, payloadOffset(), lengthValue());
+        payloadRO.wrap(buffer, payloadOffset(), length());
 
         checkLimit(limit(), maxLimit);
 
@@ -106,7 +108,7 @@ public final class WsFrameFW extends Flyweight
     @Override
     public String toString()
     {
-        return String.format("[fin=%s, opcode=%d, payload.length=%d]", fin(), opcode(), lengthValue());
+        return String.format("[fin=%s, opcode=%d, payload.length=%d]", fin(), opcode(), length());
     }
 
     private int payloadOffset()
@@ -136,17 +138,17 @@ public final class WsFrameFW extends Flyweight
         }
     }
 
-    private int lengthValue()
+    private int length()
     {
         int length = buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f;
 
         switch (length)
         {
         case 0x7e:
-            return buffer().getShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1) & 0xffff;
+            return buffer().getShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN) & 0xffff;
 
         case 0x7f:
-            long length8bytes = buffer().getLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1);
+            long length8bytes = buffer().getLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN);
             validateLength(length8bytes);
             return (int) length8bytes & 0xffffffff;
 
@@ -210,7 +212,7 @@ public final class WsFrameFW extends Flyweight
                 case 126:
                 case 127:
                     buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) 126);
-                    buffer().putShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, (short) length);
+                    buffer().putShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, (short) length, ByteOrder.BIG_ENDIAN);
                     buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3, buffer, offset, length);
                     super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3 + length);
                     break;
@@ -223,13 +225,13 @@ public final class WsFrameFW extends Flyweight
                 break;
             case 128:
                 buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) 126);
-                buffer().putShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, (short) length);
+                buffer().putShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, (short) length, ByteOrder.BIG_ENDIAN);
                 buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3, buffer, offset, length);
                 super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3 + length);
                 break;
             default:
                 buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) 127);
-                buffer().putLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, length);
+                buffer().putLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, length, ByteOrder.BIG_ENDIAN);
                 buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 9, buffer, offset, length);
                 super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 9 + length);
                 break;

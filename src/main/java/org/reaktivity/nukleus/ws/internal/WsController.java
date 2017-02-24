@@ -30,13 +30,11 @@ import org.agrona.concurrent.broadcast.CopyBroadcastReceiver;
 import org.agrona.concurrent.ringbuffer.RingBuffer;
 import org.reaktivity.nukleus.Controller;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
-import org.reaktivity.nukleus.ws.internal.types.control.BindFW;
-import org.reaktivity.nukleus.ws.internal.types.control.BoundFW;
 import org.reaktivity.nukleus.ws.internal.types.control.ErrorFW;
+import org.reaktivity.nukleus.ws.internal.types.control.Role;
 import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.ws.internal.types.control.RoutedFW;
-import org.reaktivity.nukleus.ws.internal.types.control.UnbindFW;
-import org.reaktivity.nukleus.ws.internal.types.control.UnboundFW;
+import org.reaktivity.nukleus.ws.internal.types.control.State;
 import org.reaktivity.nukleus.ws.internal.types.control.UnrouteFW;
 import org.reaktivity.nukleus.ws.internal.types.control.UnroutedFW;
 import org.reaktivity.nukleus.ws.internal.types.control.WsRouteExFW;
@@ -46,16 +44,12 @@ public final class WsController implements Controller
     private static final int MAX_SEND_LENGTH = 1024; // TODO: Configuration and Context
 
     // TODO: thread-safe flyweights or command queue from public methods
-    private final BindFW.Builder bindRW = new BindFW.Builder();
-    private final UnbindFW.Builder unbindRW = new UnbindFW.Builder();
     private final RouteFW.Builder routeRW = new RouteFW.Builder();
     private final UnrouteFW.Builder unrouteRW = new UnrouteFW.Builder();
 
     private final WsRouteExFW.Builder routeExRW = new WsRouteExFW.Builder();
 
     private final ErrorFW errorRO = new ErrorFW();
-    private final BoundFW boundRO = new BoundFW();
-    private final UnboundFW unboundRO = new UnboundFW();
     private final RoutedFW routedRO = new RoutedFW();
     private final UnroutedFW unroutedRO = new UnroutedFW();
 
@@ -102,116 +96,124 @@ public final class WsController implements Controller
         return "ws";
     }
 
-    public CompletableFuture<Long> bind(
-        int kind)
-    {
-        final CompletableFuture<Long> promise = new CompletableFuture<>();
-
-        long correlationId = conductorCommands.nextCorrelationId();
-
-        BindFW bindRO = bindRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
-                              .correlationId(correlationId)
-                              .kind((byte) kind)
-                              .build();
-
-        if (!conductorCommands.write(bindRO.typeId(), bindRO.buffer(), bindRO.offset(), bindRO.length()))
-        {
-            commandSendFailed(promise);
-        }
-        else
-        {
-            commandSent(correlationId, promise);
-        }
-
-        return promise;
-    }
-
-    public CompletableFuture<Void> unbind(
-        long referenceId)
-    {
-        final CompletableFuture<Void> promise = new CompletableFuture<>();
-
-        long correlationId = conductorCommands.nextCorrelationId();
-
-        UnbindFW unbindRO = unbindRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
-                                    .correlationId(correlationId)
-                                    .referenceId(referenceId)
-                                    .build();
-
-        if (!conductorCommands.write(unbindRO.typeId(), unbindRO.buffer(), unbindRO.offset(), unbindRO.length()))
-        {
-            commandSendFailed(promise);
-        }
-        else
-        {
-            commandSent(correlationId, promise);
-        }
-
-        return promise;
-    }
-
-    public CompletableFuture<Void> route(
+    public CompletableFuture<Long> routeInputNone(
         String source,
         long sourceRef,
         String target,
         long targetRef,
         String protocol)
     {
-        final CompletableFuture<Void> promise = new CompletableFuture<>();
-
-        long correlationId = conductorCommands.nextCorrelationId();
-
-        RouteFW routeRO = routeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
-                                 .correlationId(correlationId)
-                                 .source(source)
-                                 .sourceRef(sourceRef)
-                                 .target(target)
-                                 .targetRef(targetRef)
-                                 .extension(b -> b.set(visitRouteEx(protocol)))
-                                 .build();
-
-        if (!conductorCommands.write(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.length()))
-        {
-            commandSendFailed(promise);
-        }
-        else
-        {
-            commandSent(correlationId, promise);
-        }
-
-        return promise;
+        return route(Role.INPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
     }
 
-    public CompletableFuture<Void> unroute(
+    public CompletableFuture<Long> routeInputNew(
         String source,
         long sourceRef,
         String target,
         long targetRef,
         String protocol)
     {
-        final CompletableFuture<Void> promise = new CompletableFuture<>();
+        return route(Role.INPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
 
-        long correlationId = conductorCommands.nextCorrelationId();
+    public CompletableFuture<Long> routeInputEstablished(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return route(Role.INPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+    }
 
-        UnrouteFW unrouteRO = unrouteRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
-                                       .correlationId(correlationId)
-                                       .source(source)
-                                       .sourceRef(sourceRef)
-                                       .target(target)
-                                       .targetRef(targetRef)
-                                       .extension(b -> b.set(visitRouteEx(protocol)))
-                                       .build();
+    public CompletableFuture<Long> routeOutputNone(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return route(Role.OUTPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+    }
 
-        if (!conductorCommands.write(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.length()))
-        {
-            commandSendFailed(promise);
-        }
-        else
-        {
-            commandSent(correlationId, promise);
-        }
+    public CompletableFuture<Long> routeOutputNew(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return route(Role.OUTPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
 
-        return promise;
+    public CompletableFuture<Long> routeOutputEstablished(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return route(Role.OUTPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteInputNone(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return unroute(Role.INPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteInputNew(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return unroute(Role.INPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteInputEstablished(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return unroute(Role.INPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteOutputNone(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return unroute(Role.OUTPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteOutputNew(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return unroute(Role.OUTPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+    }
+
+    public CompletableFuture<Void> unrouteOutputEstablished(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        return unroute(Role.OUTPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
     }
 
     public WsStreams streams(
@@ -242,7 +244,7 @@ public final class WsController implements Controller
             routeExRW.wrap(buffer, offset, limit)
                      .protocol(protocol)
                      .build()
-                     .length();
+                     .sizeof();
     }
 
     private int handleResponse(
@@ -255,12 +257,6 @@ public final class WsController implements Controller
         {
         case ErrorFW.TYPE_ID:
             handleErrorResponse(buffer, index, length);
-            break;
-        case BoundFW.TYPE_ID:
-            handleBoundResponse(buffer, index, length);
-            break;
-        case UnboundFW.TYPE_ID:
-            handleUnboundResponse(buffer, index, length);
             break;
         case RoutedFW.TYPE_ID:
             handleRoutedResponse(buffer, index, length);
@@ -291,37 +287,6 @@ public final class WsController implements Controller
     }
 
     @SuppressWarnings("unchecked")
-    private void handleBoundResponse(
-        DirectBuffer buffer,
-        int index,
-        int length)
-    {
-        boundRO.wrap(buffer, index, length);
-        long correlationId = boundRO.correlationId();
-
-        CompletableFuture<Long> promise = (CompletableFuture<Long>)promisesByCorrelationId.remove(correlationId);
-        if (promise != null)
-        {
-            commandSucceeded(promise, boundRO.referenceId());
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void handleUnboundResponse(
-        DirectBuffer buffer,
-        int index,
-        int length)
-    {
-        unboundRO.wrap(buffer, index, length);
-        long correlationId = unboundRO.correlationId();
-
-        CompletableFuture<Void> promise = (CompletableFuture<Void>)promisesByCorrelationId.remove(correlationId);
-        if (promise != null)
-        {
-            commandSucceeded(promise);
-        }
-    }
-
     private void handleRoutedResponse(
         DirectBuffer buffer,
         int index,
@@ -329,11 +294,12 @@ public final class WsController implements Controller
     {
         routedRO.wrap(buffer, index, length);
         long correlationId = routedRO.correlationId();
+        long sourceRef = routedRO.sourceRef();
 
-        CompletableFuture<?> promise = promisesByCorrelationId.remove(correlationId);
+        CompletableFuture<Long> promise = (CompletableFuture<Long>) promisesByCorrelationId.remove(correlationId);
         if (promise != null)
         {
-            commandSucceeded(promise);
+            commandSucceeded(promise, sourceRef);
         }
     }
 
@@ -384,4 +350,77 @@ public final class WsController implements Controller
     {
         return promise.completeExceptionally(new IllegalStateException(message).fillInStackTrace());
     }
+
+    private CompletableFuture<Long> route(
+        Role role,
+        State state,
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        final CompletableFuture<Long> promise = new CompletableFuture<>();
+
+        long correlationId = conductorCommands.nextCorrelationId();
+
+        RouteFW routeRO = routeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
+                                 .correlationId(correlationId)
+                                 .role(b -> b.set(role))
+                                 .state(b -> b.set(state))
+                                 .source(source)
+                                 .sourceRef(sourceRef)
+                                 .target(target)
+                                 .targetRef(targetRef)
+                                 .extension(b -> b.set(visitRouteEx(protocol)))
+                                 .build();
+
+        if (!conductorCommands.write(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.sizeof()))
+        {
+            commandSendFailed(promise);
+        }
+        else
+        {
+            commandSent(correlationId, promise);
+        }
+
+        return promise;
+    }
+
+    private CompletableFuture<Void> unroute(
+        Role role,
+        State state,
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String protocol)
+    {
+        final CompletableFuture<Void> promise = new CompletableFuture<>();
+
+        long correlationId = conductorCommands.nextCorrelationId();
+
+        UnrouteFW unrouteRO = unrouteRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
+                                       .correlationId(correlationId)
+                                       .role(b -> b.set(role))
+                                       .state(b -> b.set(state))
+                                       .source(source)
+                                       .sourceRef(sourceRef)
+                                       .target(target)
+                                       .targetRef(targetRef)
+                                       .extension(b -> b.set(visitRouteEx(protocol)))
+                                       .build();
+
+        if (!conductorCommands.write(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.sizeof()))
+        {
+            commandSendFailed(promise);
+        }
+        else
+        {
+            commandSent(correlationId, promise);
+        }
+
+        return promise;
+    }
+
 }

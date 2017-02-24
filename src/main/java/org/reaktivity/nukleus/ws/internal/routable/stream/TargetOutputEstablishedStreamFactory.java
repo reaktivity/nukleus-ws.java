@@ -15,19 +15,14 @@
  */
 package org.reaktivity.nukleus.ws.internal.routable.stream;
 
-import static org.reaktivity.nukleus.ws.internal.routable.Route.protocolMatches;
-
-import java.util.List;
-import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
-import java.util.function.Predicate;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.MessageHandler;
-import org.reaktivity.nukleus.ws.internal.routable.Route;
 import org.reaktivity.nukleus.ws.internal.routable.Source;
 import org.reaktivity.nukleus.ws.internal.routable.Target;
 import org.reaktivity.nukleus.ws.internal.router.Correlation;
@@ -43,7 +38,7 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsDataExFW;
 
-public final class ServerReplyStreamFactory
+public final class TargetOutputEstablishedStreamFactory
 {
     private static final int ENCODE_OVERHEAD_MAXIMUM = 14;
 
@@ -60,28 +55,28 @@ public final class ServerReplyStreamFactory
     private final WsDataExFW wsDataExRO = new WsDataExFW();
 
     private final Source source;
-    private final LongFunction<List<Route>> supplyRoutes;
-    private final LongSupplier supplyTargetId;
-    private final LongFunction<Correlation> correlateReply;
+    private final Function<String, Target> supplyTarget;
+    private final LongSupplier supplyStreamId;
+    private final LongFunction<Correlation> correlateEstablished;
 
-    public ServerReplyStreamFactory(
+    public TargetOutputEstablishedStreamFactory(
         Source source,
-        LongFunction<List<Route>> supplyRoutes,
-        LongSupplier supplyTargetId,
-        LongFunction<Correlation> correlateReply)
+        Function<String, Target> supplyTarget,
+        LongSupplier supplyStreamId,
+        LongFunction<Correlation> correlateEstablished)
     {
         this.source = source;
-        this.supplyRoutes = supplyRoutes;
-        this.supplyTargetId = supplyTargetId;
-        this.correlateReply = correlateReply;
+        this.supplyTarget = supplyTarget;
+        this.supplyStreamId = supplyStreamId;
+        this.correlateEstablished = correlateEstablished;
     }
 
     public MessageHandler newStream()
     {
-        return new ServerReplyStream()::handleStream;
+        return new TargetOutputEstablishedStream()::handleStream;
     }
 
-    private final class ServerReplyStream
+    private final class TargetOutputEstablishedStream
     {
         private MessageHandler streamState;
 
@@ -90,7 +85,7 @@ public final class ServerReplyStreamFactory
         private Target target;
         private long targetId;
 
-        private ServerReplyStream()
+        private TargetOutputEstablishedStream()
         {
             this.streamState = this::beforeBegin;
         }
@@ -196,45 +191,26 @@ public final class ServerReplyStreamFactory
 
             final long newSourceId = beginRO.streamId();
             final long sourceRef = beginRO.referenceId();
-            final long correlationId = beginRO.correlationId();
+            final long targetCorrelationId = beginRO.correlationId();
             final OctetsFW extension = beginRO.extension();
 
-            final List<Route> routes = supplyRoutes.apply(sourceRef);
+            final Correlation correlation = correlateEstablished.apply(targetCorrelationId);
 
-            String protocol = null;
-            if (extension.length() > 0)
+            if (sourceRef == 0L && correlation != null)
             {
-                final WsBeginExFW wsBeginEx = extension.get(wsBeginExRO::wrap);
-                protocol = wsBeginEx.protocol().asString();
-            }
+                final Target newTarget = supplyTarget.apply(correlation.source());
+                final long newTargetId = supplyStreamId.getAsLong();
+                final long sourceCorrelationId = correlation.id();
+                String sourceHash = correlation.hash();
 
-            final Predicate<Route> predicate = protocolMatches(protocol);
-            final Optional<Route> optional = routes.stream().filter(predicate).findFirst();
+                newTarget.doHttpBegin(newTargetId, 0L, sourceCorrelationId, setHttpHeaders(sourceHash));
+                newTarget.addThrottle(newTargetId, this::handleThrottle);
 
-            if (optional.isPresent())
-            {
-                final Route route = optional.get();
-                final Target newTarget = route.target();
-                final long targetRef = route.targetRef();
-                final long newTargetId = supplyTargetId.getAsLong();
+                this.sourceId = newSourceId;
+                this.target = newTarget;
+                this.targetId = newTargetId;
 
-                final Correlation correlation = correlateReply.apply(correlationId);
-
-                if (correlation != null)
-                {
-                    newTarget.doHttpBegin(newTargetId, targetRef, correlation.id(), setHttpHeaders(correlation.hash()));
-                    newTarget.addThrottle(newTargetId, this::handleThrottle);
-
-                    this.sourceId = newSourceId;
-                    this.target = newTarget;
-                    this.targetId = newTargetId;
-
-                    this.streamState = this::afterBeginOrData;
-                }
-                else
-                {
-                    processUnexpected(buffer, index, length);
-                }
+                this.streamState = this::afterBeginOrData;
             }
             else
             {
@@ -251,7 +227,7 @@ public final class ServerReplyStreamFactory
 
             int flags = 0;
             final OctetsFW extension = dataRO.extension();
-            if (extension.length() > 0)
+            if (extension.sizeof() > 0)
             {
                 final WsDataExFW wsDataEx = extension.get(wsDataExRO::wrap);
                 flags = wsDataEx.flags();
@@ -284,7 +260,7 @@ public final class ServerReplyStreamFactory
 
                 // TODO: auto-exclude header if value is null
                 final OctetsFW extension = beginRO.extension();
-                if (extension.length() > 0)
+                if (extension.sizeof() > 0)
                 {
                     final WsBeginExFW wsBeginEx = extension.get(wsBeginExRO::wrap);
                     final String wsProtocol = wsBeginEx.protocol().asString();

@@ -18,9 +18,9 @@ package org.reaktivity.nukleus.ws.internal.routable.stream;
 import static java.lang.Integer.highestOneBit;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.agrona.BitUtil.SIZE_OF_BYTE;
 import static org.agrona.BitUtil.SIZE_OF_SHORT;
 import static org.reaktivity.nukleus.ws.internal.routable.Route.protocolMatches;
+import static org.reaktivity.nukleus.ws.internal.router.RouteKind.OUTPUT_ESTABLISHED;
 import static org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW.STATUS_NORMAL_CLOSURE;
 import static org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW.STATUS_PROTOCOL_ERROR;
 
@@ -54,7 +54,7 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW;
 import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
-public final class ServerInitialStreamFactory
+public final class SourceInputStreamFactory
 {
     private static final byte[] HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(UTF_8);
     private static final String WEBSOCKET_VERSION_13 = "13";
@@ -81,26 +81,26 @@ public final class ServerInitialStreamFactory
     private final Source source;
     private final LongFunction<List<Route>> supplyRoutes;
     private final LongSupplier supplyTargetId;
-    private final LongObjectBiConsumer<Correlation> correlateInitial;
+    private final LongObjectBiConsumer<Correlation> correlateNew;
 
-    public ServerInitialStreamFactory(
+    public SourceInputStreamFactory(
         Source source,
         LongFunction<List<Route>> supplyRoutes,
         LongSupplier supplyTargetId,
-        LongObjectBiConsumer<Correlation> correlateInitial)
+        LongObjectBiConsumer<Correlation> correlateNew)
     {
         this.source = source;
         this.supplyRoutes = supplyRoutes;
         this.supplyTargetId = supplyTargetId;
-        this.correlateInitial = correlateInitial;
+        this.correlateNew = correlateNew;
     }
 
     public MessageHandler newStream()
     {
-        return new ServerInitialStream()::handleStream;
+        return new SourceInputStream()::handleStream;
     }
 
-    private final class ServerInitialStream
+    private final class SourceInputStream
     {
         private MessageHandler streamState;
 
@@ -109,7 +109,7 @@ public final class ServerInitialStreamFactory
         private Target target;
         private long targetId;
 
-        private ServerInitialStream()
+        private SourceInputStream()
         {
             this.streamState = this::beforeBegin;
         }
@@ -276,14 +276,15 @@ public final class ServerInitialStreamFactory
                     final byte[] digest = sha1.digest(HANDSHAKE_GUID);
                     final Encoder encoder = Base64.getEncoder();
                     final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
-                    final Correlation correlation = new Correlation(correlationId, handshakeHash);
+                    final Correlation correlation =
+                            new Correlation(correlationId, source.routableName(), OUTPUT_ESTABLISHED, handshakeHash);
 
-                    correlateInitial.accept(targetCorrelationId, correlation);
+                    correlateNew.accept(targetCorrelationId, correlation);
 
                     final Route route = optional.get();
                     final Target newTarget = route.target();
                     final long targetRef = route.targetRef();
-                    final String protocol = route.protocol();
+                    final String protocol = resolveProtocol(protocols, route.protocol());
 
                     newTarget.doWsBegin(newTargetId, targetRef, targetCorrelationId, protocol);
                     newTarget.addThrottle(newTargetId, this::handleThrottle);
@@ -338,7 +339,7 @@ public final class ServerInitialStreamFactory
             final OctetsFW httpPayload)
         {
             final DirectBuffer buffer = httpPayload.buffer();
-            final int offset = httpPayload.offset() + SIZE_OF_BYTE;
+            final int offset = httpPayload.offset();
             final int limit = httpPayload.limit();
 
             int bytesWritten = 0;
@@ -384,6 +385,13 @@ public final class ServerInitialStreamFactory
             final Predicate<Route> predicate = protocolMatches(protocols);
 
             return routes.stream().filter(predicate).findFirst();
+        }
+
+        private String resolveProtocol(
+            final String protocols,
+            final String protocol)
+        {
+            return (protocols != null) && protocols.contains(protocol) ? protocol : null;
         }
 
         private Optional<Route> resolveReplyTo(

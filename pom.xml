@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.reaktivity</groupId>
   <artifactId>nukleus-ws</artifactId>
-  <version>0.2</version>
+  <version>0.3</version>
   <name>WebSocket Nukleus Implementation</name>
   <description>WebSocket Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-ws.java</url>
@@ -46,10 +46,10 @@
     <junit.version>4.12</junit.version>
     <k3po.version>3.0.0-alpha-54</k3po.version>
     <jmh.version>1.12</jmh.version>
-    <nukleus.plugin.version>0.3</nukleus.plugin.version>
+    <nukleus.plugin.version>0.7.3</nukleus.plugin.version>
     <nukleus.version>0.2</nukleus.version>
-    <nukleus.http.spec.version>0.3</nukleus.http.spec.version>
-    <nukleus.ws.spec.version>0.2</nukleus.ws.spec.version>
+    <nukleus.http.spec.version>0.6</nukleus.http.spec.version>
+    <nukleus.ws.spec.version>0.4</nukleus.ws.spec.version>
     <reaktor.test.version>0.1</reaktor.test.version>
     <reaktor.version>0.1</reaktor.version>
   </properties>
@@ -76,11 +76,13 @@
       <groupId>org.reaktivity</groupId>
       <artifactId>reaktor</artifactId>
       <version>${reaktor.version}</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.reaktivity</groupId>
       <artifactId>reaktor-test</artifactId>
       <version>${reaktor.test.version}</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
@@ -127,7 +129,7 @@
         <artifactId>nukleus-maven-plugin</artifactId>
         <version>${nukleus.plugin.version}</version>
         <configuration>
-          <scopeNames>common http ws</scopeNames>
+          <scopeNames>core http ws</scopeNames>
           <packageName>org.reaktivity.nukleus.ws.internal.types</packageName>
         </configuration>
         <executions>
@@ -150,7 +152,19 @@
           <includes>
             <include>src/**</include>
           </includes>
+          <excludes>
+            <exclude>src/conf/**</exclude>
+          </excludes>
+          <failIfUnknown>true</failIfUnknown>
         </configuration>
+        <executions>
+          <execution>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <artifactId>maven-checkstyle-plugin</artifactId>
@@ -246,34 +260,6 @@
         </executions>
       </plugin>
     </plugins>
-    <pluginManagement>
-      <plugins>
-        <plugin>
-          <groupId>org.eclipse.m2e</groupId>
-          <artifactId>lifecycle-mapping</artifactId>
-          <version>1.0.0</version>
-          <configuration>
-            <lifecycleMappingMetadata>
-              <pluginExecutions>
-                <pluginExecution>
-                  <pluginExecutionFilter>
-                    <groupId>org.reaktivity</groupId>
-                    <artifactId>nukleus-maven-plugin</artifactId>
-                    <versionRange>[0.1,)</versionRange>
-                    <goals>
-                      <goal>generate</goal>
-                    </goals>
-                  </pluginExecutionFilter>
-                  <action>
-                    <ignore></ignore>
-                  </action>
-                </pluginExecution>
-              </pluginExecutions>
-            </lifecycleMappingMetadata>
-          </configuration>
-        </plugin>
-      </plugins>
-    </pluginManagement>
   </build>
 
   <profiles>

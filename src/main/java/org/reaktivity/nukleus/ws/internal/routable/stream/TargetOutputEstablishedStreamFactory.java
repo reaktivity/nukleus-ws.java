@@ -203,7 +203,7 @@ public final class TargetOutputEstablishedStreamFactory
                 final long sourceCorrelationId = correlation.id();
                 String sourceHash = correlation.hash();
 
-                newTarget.doHttpBegin(newTargetId, 0L, sourceCorrelationId, setHttpHeaders(sourceHash));
+                newTarget.doHttpBegin(newTargetId, 0L, sourceCorrelationId, setHttpHeaders(sourceHash, correlation.protocol()));
                 newTarget.addThrottle(newTargetId, this::handleThrottle);
 
                 this.sourceId = newSourceId;
@@ -249,7 +249,8 @@ public final class TargetOutputEstablishedStreamFactory
         }
 
         private Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> setHttpHeaders(
-            String handshakeHash)
+            String handshakeHash,
+            String protocol)
         {
             return headers ->
             {
@@ -269,6 +270,14 @@ public final class TargetOutputEstablishedStreamFactory
                     {
                         headers.item(h -> h.name("sec-websocket-protocol").value(negotiated));
                     }
+                    else if(protocol != null)
+                    {
+                        headers.item(h -> h.name("sec-websocket-protocol").value(protocol));
+                    }
+                }
+                else if(protocol != null)
+                {
+                    headers.item(h -> h.name("sec-websocket-protocol").value(protocol));
                 }
             };
         }

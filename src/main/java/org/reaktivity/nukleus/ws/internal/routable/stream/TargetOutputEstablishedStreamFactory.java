@@ -202,11 +202,13 @@ public final class TargetOutputEstablishedStreamFactory
                 final long newTargetId = supplyStreamId.getAsLong();
                 final long sourceCorrelationId = correlation.id();
                 String sourceHash = correlation.hash();
+                String protocol = correlation.protocol();
 
-                newTarget.doHttpBegin(newTargetId, 0L, sourceCorrelationId, setHttpHeaders(sourceHash, correlation.protocol()));
+                newTarget.doHttpBegin(newTargetId, 0L, sourceCorrelationId, setHttpHeaders(sourceHash, protocol));
                 newTarget.addThrottle(newTargetId, this::handleThrottle);
 
                 this.sourceId = newSourceId;
+                source.doWindow(newSourceId, 1024);
                 this.target = newTarget;
                 this.targetId = newTargetId;
 
@@ -225,7 +227,7 @@ public final class TargetOutputEstablishedStreamFactory
         {
             dataRO.wrap(buffer, index, index + length);
 
-            int flags = 0;
+            int flags = 0x82;
             final OctetsFW extension = dataRO.extension();
             if (extension.sizeof() > 0)
             {
@@ -265,19 +267,11 @@ public final class TargetOutputEstablishedStreamFactory
                 {
                     final WsBeginExFW wsBeginEx = extension.get(wsBeginExRO::wrap);
                     final String wsProtocol = wsBeginEx.protocol().asString();
-                    final String negotiated = wsProtocol;
+                    final String negotiated = wsProtocol == null ? protocol : wsProtocol;
                     if (negotiated != null)
                     {
                         headers.item(h -> h.name("sec-websocket-protocol").value(negotiated));
                     }
-                    else if(protocol != null)
-                    {
-                        headers.item(h -> h.name("sec-websocket-protocol").value(protocol));
-                    }
-                }
-                else if(protocol != null)
-                {
-                    headers.item(h -> h.name("sec-websocket-protocol").value(protocol));
                 }
             };
         }

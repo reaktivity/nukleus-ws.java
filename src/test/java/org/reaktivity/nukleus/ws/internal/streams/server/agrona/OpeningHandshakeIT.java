@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal.streams.server;
+package org.reaktivity.nukleus.ws.internal.streams.server.agrona;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
@@ -34,9 +34,8 @@ import org.reaktivity.reaktor.test.NukleusRule;
 public class OpeningHandshakeIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/opening")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/opening");
+        .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
+        .addScriptRoot("streams", "org/reaktivity/specification/nukleus/ws/streams/opening/agrona");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
 
@@ -44,7 +43,11 @@ public class OpeningHandshakeIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024);
+        .counterValuesBufferCapacity(1024)
+        .streams("ws", "source")
+        .streams("target", "ws#source")
+        .streams("ws", "target")
+        .streams("source", "ws#target");
 
     @Rule
     public final TestRule chain = outerRule(nukleus).around(k3po).around(timeout);
@@ -52,10 +55,13 @@ public class OpeningHandshakeIT
     @Test
     @Specification({
         "${route}/input/new/controller",
-        "${client}/connection.established/handshake.request",
-        "${server}/connection.established/handshake.response" })
+        "${streams}/connection.established/server/source",
+        "${streams}/connection.established/server/target" })
     public void shouldEstablishConnection() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_INPUT");
+        k3po.notifyBarrier("ROUTED_OUTPUT");
         k3po.finish();
     }
 }

@@ -70,7 +70,8 @@ public final class Source implements Nukleus
         Function<String, Target> supplyTarget,
         LongObjectBiConsumer<Correlation> correlateNew,
         LongFunction<Correlation> correlateEstablished,
-        LongFunction<Correlation> lookupEstablished)
+        LongFunction<Correlation> lookupEstablished,
+        Long2ObjectHashMap<MessageHandler> streams)
     {
         this.sourceName = sourceName;
         this.partitionName = partitionName;
@@ -79,7 +80,7 @@ public final class Source implements Nukleus
 
         this.streamsBuffer = layout.streamsBuffer();
         this.throttleBuffer = layout.throttleBuffer();
-        this.streams = new Long2ObjectHashMap<>();
+        this.streams = streams;
 
         this.streamFactories = new EnumMap<>(RouteKind.class);
         this.streamFactories.put(RouteKind.INPUT,

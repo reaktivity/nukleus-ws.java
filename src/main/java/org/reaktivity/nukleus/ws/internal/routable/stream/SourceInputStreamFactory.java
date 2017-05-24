@@ -276,15 +276,16 @@ public final class SourceInputStreamFactory
                     final byte[] digest = sha1.digest(HANDSHAKE_GUID);
                     final Encoder encoder = Base64.getEncoder();
                     final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
-                    final Correlation correlation =
-                            new Correlation(correlationId, source.routableName(), OUTPUT_ESTABLISHED, handshakeHash);
-
-                    correlateNew.accept(targetCorrelationId, correlation);
 
                     final Route route = optional.get();
                     final Target newTarget = route.target();
                     final long targetRef = route.targetRef();
                     final String protocol = resolveProtocol(protocols, route.protocol());
+
+                    final Correlation correlation =
+                            new Correlation(correlationId, source.routableName(), OUTPUT_ESTABLISHED, handshakeHash, protocol);
+
+                    correlateNew.accept(targetCorrelationId, correlation);
 
                     newTarget.doWsBegin(newTargetId, targetRef, targetCorrelationId, protocol);
                     newTarget.addThrottle(newTargetId, this::handleThrottle);

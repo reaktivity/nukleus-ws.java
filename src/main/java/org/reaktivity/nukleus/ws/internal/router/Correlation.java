@@ -25,17 +25,20 @@ public class Correlation
     private final String source;
     private final RouteKind established;
     private final String hash;
+    private final String protocol;
 
     public Correlation(
         long id,
         String source,
         RouteKind established,
-        String hash)
+        String hash,
+        String protocol)
     {
         this.id = id;
         this.source = requireNonNull(source, "source");
         this.established = requireNonNull(established, "established");
         this.hash = hash;
+        this.protocol = protocol;
     }
 
     public long id()
@@ -58,12 +61,18 @@ public class Correlation
         return hash;
     }
 
+    public String protocol()
+    {
+        return protocol;
+    }
+
     @Override
     public int hashCode()
     {
         int result = Long.hashCode(id);
         result = 31 * result + source.hashCode();
         result = 31 * result + established.hashCode();
+        result = 31 * result + protocol.hashCode();
         result = 31 * result + hash.hashCode();
 
         return result;
@@ -82,12 +91,14 @@ public class Correlation
         return this.id == that.id &&
                 this.established == that.established &&
                 Objects.equals(this.source, that.source) &&
+                Objects.equals(this.protocol, that.protocol) &&
                 Objects.equals(this.hash, that.hash);
     }
 
     @Override
     public String toString()
     {
-        return String.format("[id=%d, source=\"%s\", established=%s, hash=\"%s\"]", id, source, established, hash);
+        return String.format("[id=%d, source=\"%s\", established=%s, protocol=\"%s\" hash=\"%s\"]",
+                id, source, established, protocol, hash);
     }
 }

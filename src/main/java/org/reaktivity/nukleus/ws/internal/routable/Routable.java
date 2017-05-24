@@ -33,6 +33,7 @@ import java.util.function.Predicate;
 import org.agrona.LangUtil;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.AtomicBuffer;
+import org.agrona.concurrent.MessageHandler;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.Reaktive;
@@ -59,6 +60,8 @@ public final class Routable extends Nukleus.Composite
     private final LongFunction<Correlation> lookupEstablished;
     private final LongSupplier supplyTargetId;
 
+    private final Long2ObjectHashMap<MessageHandler> streams;
+
     public Routable(
         Context context,
         Conductor conductor,
@@ -78,6 +81,7 @@ public final class Routable extends Nukleus.Composite
         this.targetsByName = new HashMap<>();
         this.routesByRef = new Long2ObjectHashMap<>();
         this.supplyTargetId = context.counters().streamsSourced()::increment;
+        this.streams = new Long2ObjectHashMap<>();
     }
 
     @Override
@@ -166,7 +170,7 @@ public final class Routable extends Nukleus.Composite
 
         return include(new Source(sourceName, partitionName, layout, writeBuffer,
                                   this::supplyRoutes, supplyTargetId, this::supplyTarget,
-                                  correlateNew, lookupEstablished, correlateEstablished));
+                                  correlateNew, lookupEstablished, correlateEstablished, streams));
     }
 
     private Target supplyTarget(

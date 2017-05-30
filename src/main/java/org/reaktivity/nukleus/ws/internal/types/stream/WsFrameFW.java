@@ -72,9 +72,14 @@ public final class WsFrameFW extends Flyweight
         return buffer().getByte(offset() + FIELD_OFFSET_FLAGS_AND_OPCODE) & 0x0f;
     }
 
+    private boolean isMasked(byte b)
+    {
+        return (b & 0x80) != 0;
+    }
+
     public boolean mask()
     {
-        return (buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH) & 0x80) != 0;
+        return isMasked(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
     }
 
     public int maskingKey()
@@ -91,6 +96,46 @@ public final class WsFrameFW extends Flyweight
     public int limit()
     {
         return payloadOffset() + length();
+    }
+
+    public boolean canWrap(DirectBuffer buffer, int offset, int maxLimit)
+    {
+        int maxLength = maxLimit - offset;
+        int wsFrameLength = 2;
+        if(maxLength < wsFrameLength)
+        {
+           return false;
+        }
+
+        byte secondByte = buffer.getByte(offset + 1);
+        wsFrameLength += lengthSize(secondByte) - 1;
+
+        if(maxLength < wsFrameLength)
+        {
+            return false;
+        }
+
+        wsFrameLength += length(buffer, offset);
+
+        if(isMasked(secondByte))
+        {
+            wsFrameLength+= 4;
+        }
+
+        return wsFrameLength <= maxLength;
+
+
+//        super.wrap(buffer, offset, maxLimit);
+//        payloadRO.wrap(buffer, payloadOffset(), length());
+//        try
+//        {
+//            checkLimit(limit(), maxLimit);
+//        }
+//        catch (IndexOutOfBoundsException e)
+//        {
+//            return false;
+//        }
+//        return true;
     }
 
     @Override
@@ -123,9 +168,9 @@ public final class WsFrameFW extends Flyweight
         return payloadOffset;
     }
 
-    private int lengthSize()
+    private int lengthSize(byte b)
     {
-        switch (buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f)
+        switch (b & 0x7f)
         {
         case 0x7e:
             return 3;
@@ -138,23 +183,34 @@ public final class WsFrameFW extends Flyweight
         }
     }
 
-    private int length()
+    private int lengthSize()
     {
-        int length = buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f;
+        return lengthSize(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
+    }
+
+    private int length(DirectBuffer buffer, int offset)
+    {
+        int length = buffer.getByte(offset + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f;
 
         switch (length)
         {
         case 0x7e:
-            return buffer().getShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN) & 0xffff;
+            return buffer.getShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN) & 0xffff;
 
         case 0x7f:
-            long length8bytes = buffer().getLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN);
+            long length8bytes = buffer.getLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN);
             validateLength(length8bytes);
             return (int) length8bytes & 0xffffffff;
 
         default:
             return length;
         }
+    }
+
+    private int length()
+    {
+        DirectBuffer buffer = buffer();
+        return length(buffer, offset());
     }
 
     private void validateLength(

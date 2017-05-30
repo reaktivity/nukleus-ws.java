@@ -63,6 +63,8 @@ public final class SourceInputStreamFactory
     private static final int HEADER_SIZE_EXTENDED_PAYLOAD_16_WITH_MASKING_KEY = HEADER_SIZE_PAYLOAD_8_WITH_MASKING_KEY + 2;
     private static final int HEADER_SIZE_EXTENDED_PAYLOAD_64_WITH_MASKING_KEY = HEADER_SIZE_PAYLOAD_8_WITH_MASKING_KEY + 8;
 
+    private static final int SLAB_SLOT_NOT_ALLOCATED = -1;
+
     private final MessageDigest sha1 = initSHA1();
 
     private final FrameFW frameRO = new FrameFW();
@@ -70,6 +72,7 @@ public final class SourceInputStreamFactory
     private final BeginFW beginRO = new BeginFW();
     private final DataFW dataRO = new DataFW();
     private final EndFW endRO = new EndFW();
+    private final OctetsFW octetsRO = new OctetsFW();
 
     private final HttpBeginExFW httpBeginExRO = new HttpBeginExFW();
 
@@ -82,17 +85,20 @@ public final class SourceInputStreamFactory
     private final LongFunction<List<Route>> supplyRoutes;
     private final LongSupplier supplyTargetId;
     private final LongObjectBiConsumer<Correlation> correlateNew;
+    private final Slab slab;
 
     public SourceInputStreamFactory(
         Source source,
         LongFunction<List<Route>> supplyRoutes,
         LongSupplier supplyTargetId,
-        LongObjectBiConsumer<Correlation> correlateNew)
+        LongObjectBiConsumer<Correlation> correlateNew,
+        Slab slab)
     {
         this.source = source;
         this.supplyRoutes = supplyRoutes;
         this.supplyTargetId = supplyTargetId;
         this.correlateNew = correlateNew;
+        this.slab = slab;
     }
 
     public MessageHandler newStream()
@@ -108,6 +114,10 @@ public final class SourceInputStreamFactory
 
         private Target target;
         private long targetId;
+
+        private int slabSlot = SLAB_SLOT_NOT_ALLOCATED;
+        private int slabSlotLimit = 0;
+        private int slabSlotOffset = 0;
 
         private SourceInputStream()
         {
@@ -313,11 +323,19 @@ public final class SourceInputStreamFactory
             int index,
             int length)
         {
-            dataRO.wrap(buffer, index, index + length);
+            final DataFW data = dataRO.wrap(buffer, index, index + length);
 
-            final OctetsFW payload = dataRO.payload();
+            OctetsFW payload = data.payload();
+            if(this.slabSlotLimit != 0)
+            {
+                MutableDirectBuffer slabBuffer = slab.buffer(this.slabSlot, this.slabSlotOffset);
+                slabBuffer.putBytes(this.slabSlotLimit, payload.buffer(), payload.offset(), payload.sizeof());
+                this.slabSlotLimit += data.length();
+                payload = octetsRO.wrap(slabBuffer, 0, slabSlotLimit);
+            }
 
-            processPayload(payload);
+            long streamId = data.streamId();
+            processPayload(payload, streamId);
         }
 
         private void processEnd(
@@ -337,44 +355,78 @@ public final class SourceInputStreamFactory
         }
 
         private int processPayload(
-            final OctetsFW httpPayload)
+            final OctetsFW httpPayload,
+            final long streamId)
         {
             final DirectBuffer buffer = httpPayload.buffer();
             final int offset = httpPayload.offset();
             final int limit = httpPayload.limit();
 
             int bytesWritten = 0;
-            for (int nextOffset = offset; nextOffset < limit; nextOffset = wsFrameRO.limit())
+            int nextOffset = offset;
+            for (; nextOffset < limit; nextOffset = wsFrameRO.limit())
             {
-                wsFrameRO.wrap(buffer, nextOffset, limit);
-
-                if (wsFrameRO.mask() && wsFrameRO.maskingKey() != 0L)
+                if(wsFrameRO.canWrap(buffer, nextOffset, limit))
                 {
-                    final int maskingKey = wsFrameRO.maskingKey();
-                    final DirectBuffer payload = wsFrameRO.payload();
-
-                    switch (wsFrameRO.opcode())
+                    wsFrameRO.wrap(buffer, nextOffset, limit);
+                    if (wsFrameRO.mask() && wsFrameRO.maskingKey() != 0L)
                     {
-                    case 1: // TEXT
-                        bytesWritten += target.doWsData(targetId, 0x81, maskingKey, payload);
-                        break;
-                    case 2: // BINARY
-                        bytesWritten += target.doWsData(targetId, 0x82, maskingKey, payload);
-                        break;
-                    case 8: // CLOSE
-                        final short status = payload.capacity() >= SIZE_OF_SHORT ? payload.getShort(0) : STATUS_NORMAL_CLOSURE;
-                        target.doWsEnd(targetId, status);
-                        break;
-                    default:
-                        throw new IllegalStateException("not yet implemented");
+                            bytesWritten = processFrame(bytesWritten);
+                    }
+                    else
+                    {
+                        target.doWsEnd(targetId, STATUS_PROTOCOL_ERROR);
                     }
                 }
                 else
                 {
-                    target.doWsEnd(targetId, STATUS_PROTOCOL_ERROR);
+                    if(this.slabSlot == SLAB_SLOT_NOT_ALLOCATED)
+                    {
+                        // if not in SLAB already, then add to SLAB
+                        this.slabSlot = slab.acquire(streamId);
+                        MutableDirectBuffer slabBuffer = slab.buffer(slabSlot);
+                        slabBuffer.putBytes(0, buffer, nextOffset, limit);
+                        this.slabSlotLimit = limit - nextOffset;
+                    }
+                    else
+                    {
+                        this.slabSlotOffset = nextOffset;
+                    }
+                    break;
                 }
             }
 
+            if(nextOffset == limit && this.slabSlot != SLAB_SLOT_NOT_ALLOCATED)
+            {
+                slab.release(this.slabSlot);
+                this.slabSlotOffset = 0;
+                this.slabSlot = SLAB_SLOT_NOT_ALLOCATED;
+            }
+
+            return bytesWritten;
+        }
+
+        private int processFrame(int bytesWritten)
+        {
+            final int maskingKey = wsFrameRO.maskingKey();
+            final DirectBuffer payload = wsFrameRO.payload();
+
+            switch (wsFrameRO.opcode())
+            {
+            case 1: // TEXT
+                bytesWritten += target.doWsData(targetId, 0x81, maskingKey, payload);
+                break;
+            case 2: // BINARY
+                bytesWritten += target.doWsData(targetId, 0x82, maskingKey, payload);
+                break;
+            case 8: // CLOSE
+                final short status = payload.capacity() >=
+                    SIZE_OF_SHORT ? payload.getShort(0) : STATUS_NORMAL_CLOSURE;
+                target.doWsEnd(targetId, status);
+                break;
+            default:
+                throw new IllegalStateException("not yet implemented");
+            }
             return bytesWritten;
         }
 

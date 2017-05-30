@@ -28,6 +28,7 @@ import org.reaktivity.nukleus.Reaktive;
 import org.reaktivity.nukleus.ws.internal.Context;
 import org.reaktivity.nukleus.ws.internal.conductor.Conductor;
 import org.reaktivity.nukleus.ws.internal.routable.Routable;
+import org.reaktivity.nukleus.ws.internal.routable.stream.Slab;
 import org.reaktivity.nukleus.ws.internal.types.control.Role;
 import org.reaktivity.nukleus.ws.internal.types.control.State;
 
@@ -40,8 +41,10 @@ public final class Router extends Nukleus.Composite
     private final Map<String, Routable> routables;
     private final Long2ObjectHashMap<Correlation> correlations;
     private final AtomicCounter routesSourced;
+    private final Slab slab;
 
     private Conductor conductor;
+
 
     public Router(
         Context context)
@@ -50,6 +53,7 @@ public final class Router extends Nukleus.Composite
         this.routables = new HashMap<>();
         this.correlations = new Long2ObjectHashMap<>();
         this.routesSourced = context.counters().routesSourced();
+        this.slab = new Slab(context.memoryForRepeatRequests, context.maximumRequestSize);
     }
 
     public void setConductor(Conductor conductor)
@@ -144,6 +148,7 @@ public final class Router extends Nukleus.Composite
     private Routable newRoutable(
         String sourceName)
     {
-        return include(new Routable(context, conductor, sourceName, correlations::put, correlations::get, correlations::remove));
+        return include(
+            new Routable(context, conductor, sourceName, correlations::put, correlations::get, correlations::remove, slab));
     }
 }

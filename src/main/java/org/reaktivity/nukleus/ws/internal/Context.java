@@ -40,6 +40,9 @@ import org.reaktivity.nukleus.ws.internal.layouts.ControlLayout;
 
 public final class Context implements Closeable
 {
+    private static final String MEMORY_FOR_REPEAT_REQUESTS = "nukleus.ws.memory.for.repeat.requests";
+    private static final String MAXIMUM_REQUEST_SIZE = "nukleus.ws.maximum.request.size";
+
     private final ControlLayout.Builder controlRW = new ControlLayout.Builder();
 
     private boolean readonly;
@@ -63,6 +66,9 @@ public final class Context implements Closeable
     private Path streamsPath;
 
     private int maximumControlResponseLength;
+
+    public int memoryForRepeatRequests;
+    public int maximumRequestSize;
 
     public Context readonly(
         boolean readonly)
@@ -260,6 +266,10 @@ public final class Context implements Closeable
             this.throttleBufferCapacity = config.throttleBufferCapacity();
 
             this.maximumControlResponseLength = config.responseBufferCapacity() / 8;
+
+            this.memoryForRepeatRequests = Integer.getInteger(MEMORY_FOR_REPEAT_REQUESTS, streamsBufferCapacity);
+
+            this.maximumRequestSize = Integer.getInteger(MAXIMUM_REQUEST_SIZE, streamsBufferCapacity / 8);
 
             // default FileSystem cannot be closed
             watchService(FileSystems.getDefault().newWatchService());

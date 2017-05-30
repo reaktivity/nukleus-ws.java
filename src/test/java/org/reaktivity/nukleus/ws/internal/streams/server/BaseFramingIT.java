@@ -52,11 +52,11 @@ public class BaseFramingIT
     public final TestRule chain = outerRule(nukleus).around(k3po).around(timeout);
 
     @Test
+    @Ignore("No way to read or write 0 length data frame at high level: reaktivity/k3po-nukleus-ext.java#11")
     @Specification({
         "${route}/input/new/controller",
         "${client}/echo.binary.payload.length.0/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.0/handshake.response.and.frame" })
-    @Ignore("No way to read or write 0 length data frame at high level")
     public void shouldEchoBinaryFrameWithPayloadLength0() throws Exception
     {
         k3po.finish();

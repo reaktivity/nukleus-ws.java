@@ -156,58 +156,14 @@ public final class WsFrameFW extends Flyweight
         return payloadOffset;
     }
 
-    private int lengthSize(byte b)
-    {
-        switch (b & 0x7f)
-        {
-        case 0x7e:
-            return 3;
-
-        case 0x7f:
-            return 9;
-
-        default:
-            return 1;
-        }
-    }
-
     private int lengthSize()
     {
         return lengthSize(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
     }
 
-    private int length(DirectBuffer buffer, int offset)
-    {
-        int length = buffer.getByte(offset + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f;
-
-        switch (length)
-        {
-        case 0x7e:
-            return buffer.getShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN) & 0xffff;
-
-        case 0x7f:
-            long length8bytes = buffer.getLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN);
-            validateLength(length8bytes);
-            return (int) length8bytes & 0xffffffff;
-
-        default:
-            return length;
-        }
-    }
-
     private int length()
     {
-        DirectBuffer buffer = buffer();
-        return length(buffer, offset());
-    }
-
-    private void validateLength(
-        long length8bytes)
-    {
-        if (length8bytes >> 17L != 0L)
-        {
-            throw new IllegalStateException("frame payload too long");
-        }
+        return length(buffer(), offset());
     }
 
     public static final class Builder extends Flyweight.Builder<WsFrameFW>
@@ -282,6 +238,49 @@ public final class WsFrameFW extends Flyweight
             }
 
             return this;
+        }
+    }
+
+    private static int length(DirectBuffer buffer, int offset)
+    {
+        int length = buffer.getByte(offset + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f;
+
+        switch (length)
+        {
+        case 0x7e:
+            return buffer.getShort(offset + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN) & 0xffff;
+
+        case 0x7f:
+            long length8bytes = buffer.getLong(offset + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN);
+            validateLength(length8bytes);
+            return (int) length8bytes & 0xffffffff;
+
+        default:
+            return length;
+        }
+    }
+
+    private static void validateLength(
+            long length8bytes)
+    {
+        if (length8bytes >> 17L != 0L)
+        {
+            throw new IllegalStateException("frame payload too long");
+        }
+    }
+
+    private static int lengthSize(byte b)
+    {
+        switch (b & 0x7f)
+        {
+        case 0x7e:
+            return 3;
+
+        case 0x7f:
+            return 9;
+
+        default:
+            return 1;
         }
     }
 }

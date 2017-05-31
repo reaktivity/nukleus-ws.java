@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.ws.internal.streams.server;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -33,8 +34,11 @@ import org.reaktivity.reaktor.test.NukleusRule;
 public class BaseFramingIT
 {
     private final K3poRule k3po = new K3poRule()
-        .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-        .addScriptRoot("streams", "org/reaktivity/specification/nukleus/ws/streams/framing");
+            .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
+            .addScriptRoot("client", "org/reaktivity/specification/ws/framing")
+            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/framing")
+            // TODO: remove the following when all tests have been completed
+            .addScriptRoot("streams", "org/reaktivity/specification/ws/framing");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
 
@@ -42,38 +46,30 @@ public class BaseFramingIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024)
-        .streams("ws", "source")
-        .streams("target", "ws#source")
-        .streams("ws", "target")
-        .streams("source", "ws#target");
+        .counterValuesBufferCapacity(1024);
 
     @Rule
     public final TestRule chain = outerRule(nukleus).around(k3po).around(timeout);
 
     @Test
+    @Ignore("No way to read or write 0 length data frame at high level: reaktivity/k3po-nukleus-ext.java#11")
     @Specification({
         "${route}/input/new/controller",
-        "${streams}/echo.binary.payload.length.0/server/source",
-        "${streams}/echo.binary.payload.length.0/server/target" })
+        "${client}/echo.binary.payload.length.0/handshake.request.and.frame",
+        "${server}/echo.binary.payload.length.0/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength0() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_INPUT");
-        k3po.notifyBarrier("ROUTED_OUTPUT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/input/new/controller",
-        "${streams}/echo.binary.payload.length.125/server/source",
-        "${streams}/echo.binary.payload.length.125/server/target" })
+        "${client}/echo.binary.payload.length.125/handshake.request.and.frame",
+        "${server}/echo.binary.payload.length.125/handshake.response.and.frame" })
+    // TODO: Currently this test fails because ws nukleus does not handle payload fragmentation
     public void shouldEchoBinaryFrameWithPayloadLength125() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_INPUT");
-        k3po.notifyBarrier("ROUTED_OUTPUT");
         k3po.finish();
     }
 

@@ -72,9 +72,14 @@ public final class WsFrameFW extends Flyweight
         return buffer().getByte(offset() + FIELD_OFFSET_FLAGS_AND_OPCODE) & 0x0f;
     }
 
+    private boolean isMasked(byte b)
+    {
+        return (b & 0x80) != 0;
+    }
+
     public boolean mask()
     {
-        return (buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH) & 0x80) != 0;
+        return isMasked(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
     }
 
     public int maskingKey()
@@ -91,6 +96,34 @@ public final class WsFrameFW extends Flyweight
     public int limit()
     {
         return payloadOffset() + length();
+    }
+
+    public boolean canWrap(DirectBuffer buffer, int offset, int maxLimit)
+    {
+        int maxLength = maxLimit - offset;
+        int wsFrameLength = 2;
+        if(maxLength < wsFrameLength)
+        {
+           return false;
+        }
+
+        byte secondByte = buffer.getByte(offset + 1);
+        wsFrameLength += lengthSize(secondByte) - 1;
+
+        if(maxLength < wsFrameLength)
+        {
+            return false;
+        }
+
+        wsFrameLength += length(buffer, offset);
+
+        if(isMasked(secondByte))
+        {
+            wsFrameLength+= 4;
+        }
+
+        return wsFrameLength <= maxLength;
+
     }
 
     @Override
@@ -125,45 +158,12 @@ public final class WsFrameFW extends Flyweight
 
     private int lengthSize()
     {
-        switch (buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f)
-        {
-        case 0x7e:
-            return 3;
-
-        case 0x7f:
-            return 9;
-
-        default:
-            return 1;
-        }
+        return lengthSize(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
     }
 
     private int length()
     {
-        int length = buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f;
-
-        switch (length)
-        {
-        case 0x7e:
-            return buffer().getShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN) & 0xffff;
-
-        case 0x7f:
-            long length8bytes = buffer().getLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN);
-            validateLength(length8bytes);
-            return (int) length8bytes & 0xffffffff;
-
-        default:
-            return length;
-        }
-    }
-
-    private void validateLength(
-        long length8bytes)
-    {
-        if (length8bytes >> 17L != 0L)
-        {
-            throw new IllegalStateException("frame payload too long");
-        }
+        return length(buffer(), offset());
     }
 
     public static final class Builder extends Flyweight.Builder<WsFrameFW>
@@ -238,6 +238,49 @@ public final class WsFrameFW extends Flyweight
             }
 
             return this;
+        }
+    }
+
+    private static int length(DirectBuffer buffer, int offset)
+    {
+        int length = buffer.getByte(offset + FIELD_OFFSET_MASK_AND_LENGTH) & 0x7f;
+
+        switch (length)
+        {
+        case 0x7e:
+            return buffer.getShort(offset + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN) & 0xffff;
+
+        case 0x7f:
+            long length8bytes = buffer.getLong(offset + FIELD_OFFSET_MASK_AND_LENGTH + 1, ByteOrder.BIG_ENDIAN);
+            validateLength(length8bytes);
+            return (int) length8bytes & 0xffffffff;
+
+        default:
+            return length;
+        }
+    }
+
+    private static void validateLength(
+            long length8bytes)
+    {
+        if (length8bytes >> 17L != 0L)
+        {
+            throw new IllegalStateException("frame payload too long");
+        }
+    }
+
+    private static int lengthSize(byte b)
+    {
+        switch (b & 0x7f)
+        {
+        case 0x7e:
+            return 3;
+
+        case 0x7f:
+            return 9;
+
+        default:
+            return 1;
         }
     }
 }

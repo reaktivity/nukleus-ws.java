@@ -40,6 +40,7 @@ import org.reaktivity.nukleus.Reaktive;
 import org.reaktivity.nukleus.ws.internal.Context;
 import org.reaktivity.nukleus.ws.internal.conductor.Conductor;
 import org.reaktivity.nukleus.ws.internal.layouts.StreamsLayout;
+import org.reaktivity.nukleus.ws.internal.routable.stream.Slab;
 import org.reaktivity.nukleus.ws.internal.router.Correlation;
 import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
@@ -59,6 +60,7 @@ public final class Routable extends Nukleus.Composite
     private final LongFunction<Correlation> correlateEstablished;
     private final LongFunction<Correlation> lookupEstablished;
     private final LongSupplier supplyTargetId;
+    private final Slab slab;
 
     private final Long2ObjectHashMap<MessageHandler> streams;
 
@@ -68,7 +70,8 @@ public final class Routable extends Nukleus.Composite
         String sourceName,
         LongObjectBiConsumer<Correlation> correlateNew,
         LongFunction<Correlation> correlateEstablished,
-        LongFunction<Correlation> lookupEstablished)
+        LongFunction<Correlation> lookupEstablished,
+        Slab slab)
     {
         this.context = context;
         this.conductor = conductor;
@@ -82,6 +85,7 @@ public final class Routable extends Nukleus.Composite
         this.routesByRef = new Long2ObjectHashMap<>();
         this.supplyTargetId = context.counters().streamsSourced()::increment;
         this.streams = new Long2ObjectHashMap<>();
+        this.slab = slab;
     }
 
     @Override
@@ -170,7 +174,7 @@ public final class Routable extends Nukleus.Composite
 
         return include(new Source(sourceName, partitionName, layout, writeBuffer,
                                   this::supplyRoutes, supplyTargetId, this::supplyTarget,
-                                  correlateNew, lookupEstablished, correlateEstablished, streams));
+                                  correlateNew, lookupEstablished, correlateEstablished, streams, slab));
     }
 
     private Target supplyTarget(

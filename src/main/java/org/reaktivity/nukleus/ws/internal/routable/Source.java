@@ -31,6 +31,7 @@ import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.ws.internal.layouts.StreamsLayout;
 import org.reaktivity.nukleus.ws.internal.routable.stream.SourceOutputStreamFactory;
 import org.reaktivity.nukleus.ws.internal.routable.stream.TargetInputEstablishedStreamFactory;
+import org.reaktivity.nukleus.ws.internal.routable.stream.Slab;
 import org.reaktivity.nukleus.ws.internal.routable.stream.SourceInputStreamFactory;
 import org.reaktivity.nukleus.ws.internal.routable.stream.TargetOutputEstablishedStreamFactory;
 import org.reaktivity.nukleus.ws.internal.router.Correlation;
@@ -71,7 +72,8 @@ public final class Source implements Nukleus
         LongObjectBiConsumer<Correlation> correlateNew,
         LongFunction<Correlation> correlateEstablished,
         LongFunction<Correlation> lookupEstablished,
-        Long2ObjectHashMap<MessageHandler> streams)
+        Long2ObjectHashMap<MessageHandler> streams,
+        Slab slab)
     {
         this.sourceName = sourceName;
         this.partitionName = partitionName;
@@ -84,7 +86,7 @@ public final class Source implements Nukleus
 
         this.streamFactories = new EnumMap<>(RouteKind.class);
         this.streamFactories.put(RouteKind.INPUT,
-                new SourceInputStreamFactory(this, supplyRoutes, supplyTargetId, correlateNew)::newStream);
+                new SourceInputStreamFactory(this, supplyRoutes, supplyTargetId, correlateNew, slab)::newStream);
         this.streamFactories.put(RouteKind.OUTPUT_ESTABLISHED,
                 new TargetOutputEstablishedStreamFactory(this, supplyTarget, supplyTargetId, correlateEstablished)::newStream);
         this.streamFactories.put(RouteKind.OUTPUT,

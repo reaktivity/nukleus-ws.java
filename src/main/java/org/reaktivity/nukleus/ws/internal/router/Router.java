@@ -30,7 +30,6 @@ import org.reaktivity.nukleus.ws.internal.conductor.Conductor;
 import org.reaktivity.nukleus.ws.internal.routable.Routable;
 import org.reaktivity.nukleus.ws.internal.routable.stream.Slab;
 import org.reaktivity.nukleus.ws.internal.types.control.Role;
-import org.reaktivity.nukleus.ws.internal.types.control.State;
 
 @Reaktive
 public final class Router extends Nukleus.Composite
@@ -70,14 +69,13 @@ public final class Router extends Nukleus.Composite
     public void doRoute(
         long correlationId,
         Role role,
-        State state,
         String sourceName,
         long sourceRef,
         String targetName,
         long targetRef,
         String protocol)
     {
-        final RouteKind routeKind = RouteKind.valueOf(role, state);
+        final RouteKind routeKind = RouteKind.valueOf(role);
 
         if (sourceRef == 0L)
         {
@@ -98,7 +96,6 @@ public final class Router extends Nukleus.Composite
     public void doUnroute(
         long correlationId,
         Role role,
-        State state,
         String sourceName,
         long sourceRef,
         String targetName,

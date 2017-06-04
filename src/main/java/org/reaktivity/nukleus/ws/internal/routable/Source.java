@@ -175,13 +175,15 @@ public final class Source implements Nukleus
         int index,
         int length)
     {
-        beginRO.wrap(buffer, index, index + length);
-        final long sourceId = beginRO.streamId();
-        final long sourceRef = beginRO.referenceId();
-        final long correlationId = beginRO.correlationId();
+        final BeginFW begin = beginRO.wrap(buffer, index, index + length);
+
+        final long sourceId = begin.streamId();
+        final String sourceName = begin.source().asString();
+        final long sourceRef = begin.sourceRef();
+        final long correlationId = begin.correlationId();
 
         RouteKind routeKind = resolve(sourceRef, correlationId);
-        if (routeKind != null)
+        if (routeKind != null && this.sourceName.equals(sourceName))
         {
             final Supplier<MessageHandler> streamFactory = streamFactories.get(routeKind);
             final MessageHandler newStream = streamFactory.get();
@@ -199,7 +201,10 @@ public final class Source implements Nukleus
         final int update)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .streamId(streamId).update(update).build();
+                .streamId(streamId)
+                .update(update)
+                .frames(update)
+                .build();
 
         throttleBuffer.write(window.typeId(), window.buffer(), window.offset(), window.sizeof());
     }

@@ -112,7 +112,7 @@ public class WsServerBM
         final WsController controller = reaktor.controller(WsController.class);
 
         this.targetInputRef = random.nextLong();
-        this.sourceInputRef = controller.routeInputNew("source", 0L, "target", targetInputRef, null).get();
+        this.sourceInputRef = controller.routeServer("source", 0L, "target", targetInputRef, null).get();
 
         this.sourceInputStreams = controller.streams("source");
         this.sourceOutputEstStreams = controller.streams("ws", "target");
@@ -137,7 +137,7 @@ public class WsServerBM
 
         BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(sourceInputId)
-                .referenceId(sourceInputRef)
+                .sourceRef(sourceInputRef)
                 .correlationId(random.nextLong())
                 .extension(e -> e.set(visitHttpBeginEx(headers)))
                 .build();
@@ -180,7 +180,7 @@ public class WsServerBM
     {
         WsController controller = reaktor.controller(WsController.class);
 
-        controller.unrouteInputNew("source", sourceInputRef, "target", targetInputRef, null).get();
+        controller.unrouteServer("source", sourceInputRef, "target", targetInputRef, null).get();
 
         this.sourceInputStreams.close();
         this.sourceInputStreams = null;

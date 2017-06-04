@@ -51,7 +51,7 @@ public class OpeningHandshakeIT
 
     @Test
     @Specification({
-        "${route}/input/new/controller",
+        "${route}/server/controller",
         "${client}/connection.established/handshake.request",
         "${server}/connection.established/handshake.response" })
     public void shouldEstablishConnection() throws Exception

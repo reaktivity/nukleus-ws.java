@@ -53,27 +53,21 @@ public class BaseFramingIT
 
     @Test
     @Specification({
-        "${route}/input/new/controller",
+        "${route}/server/controller",
         "${streams}/echo.binary.payload.length.0/server/source",
         "${streams}/echo.binary.payload.length.0/server/target" })
     public void shouldEchoBinaryFrameWithPayloadLength0() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_INPUT");
-        k3po.notifyBarrier("ROUTED_OUTPUT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/input/new/controller",
+        "${route}/server/controller",
         "${streams}/echo.binary.payload.length.125/server/source",
         "${streams}/echo.binary.payload.length.125/server/target" })
     public void shouldEchoBinaryFrameWithPayloadLength125() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_INPUT");
-        k3po.notifyBarrier("ROUTED_OUTPUT");
         k3po.finish();
     }
 

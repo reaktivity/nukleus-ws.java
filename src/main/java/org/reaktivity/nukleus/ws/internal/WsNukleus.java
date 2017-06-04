@@ -24,7 +24,7 @@ import org.reaktivity.nukleus.ws.internal.watcher.Watcher;
 
 public final class WsNukleus extends Nukleus.Composite
 {
-    static final String NAME = "ws";
+    public static final String NAME = "ws";
 
     private final Closeable cleanup;
 

@@ -34,7 +34,6 @@ import org.reaktivity.nukleus.ws.internal.types.control.ErrorFW;
 import org.reaktivity.nukleus.ws.internal.types.control.Role;
 import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.ws.internal.types.control.RoutedFW;
-import org.reaktivity.nukleus.ws.internal.types.control.State;
 import org.reaktivity.nukleus.ws.internal.types.control.UnrouteFW;
 import org.reaktivity.nukleus.ws.internal.types.control.UnroutedFW;
 import org.reaktivity.nukleus.ws.internal.types.control.WsRouteExFW;
@@ -96,124 +95,44 @@ public final class WsController implements Controller
         return "ws";
     }
 
-    public CompletableFuture<Long> routeInputNone(
+    public CompletableFuture<Long> routeServer(
         String source,
         long sourceRef,
         String target,
         long targetRef,
         String protocol)
     {
-        return route(Role.INPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
+        return route(Role.SERVER, source, sourceRef, target, targetRef, protocol);
     }
 
-    public CompletableFuture<Long> routeInputNew(
+    public CompletableFuture<Long> routeClient(
         String source,
         long sourceRef,
         String target,
         long targetRef,
         String protocol)
     {
-        return route(Role.INPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
+        return route(Role.CLIENT, source, sourceRef, target, targetRef, protocol);
     }
 
-    public CompletableFuture<Long> routeInputEstablished(
+    public CompletableFuture<Void> unrouteServer(
         String source,
         long sourceRef,
         String target,
         long targetRef,
         String protocol)
     {
-        return route(Role.INPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+        return unroute(Role.SERVER, source, sourceRef, target, targetRef, protocol);
     }
 
-    public CompletableFuture<Long> routeOutputNone(
+    public CompletableFuture<Void> unrouteClient(
         String source,
         long sourceRef,
         String target,
         long targetRef,
         String protocol)
     {
-        return route(Role.OUTPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Long> routeOutputNew(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return route(Role.OUTPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Long> routeOutputEstablished(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return route(Role.OUTPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Void> unrouteInputNone(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return unroute(Role.INPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Void> unrouteInputNew(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return unroute(Role.INPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Void> unrouteInputEstablished(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return unroute(Role.INPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Void> unrouteOutputNone(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return unroute(Role.OUTPUT, State.NONE, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Void> unrouteOutputNew(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return unroute(Role.OUTPUT, State.NEW, source, sourceRef, target, targetRef, protocol);
-    }
-
-    public CompletableFuture<Void> unrouteOutputEstablished(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        return unroute(Role.OUTPUT, State.ESTABLISHED, source, sourceRef, target, targetRef, protocol);
+        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, protocol);
     }
 
     public WsStreams streams(
@@ -353,7 +272,6 @@ public final class WsController implements Controller
 
     private CompletableFuture<Long> route(
         Role role,
-        State state,
         String source,
         long sourceRef,
         String target,
@@ -367,7 +285,6 @@ public final class WsController implements Controller
         RouteFW routeRO = routeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
                                  .correlationId(correlationId)
                                  .role(b -> b.set(role))
-                                 .state(b -> b.set(state))
                                  .source(source)
                                  .sourceRef(sourceRef)
                                  .target(target)
@@ -389,7 +306,6 @@ public final class WsController implements Controller
 
     private CompletableFuture<Void> unroute(
         Role role,
-        State state,
         String source,
         long sourceRef,
         String target,
@@ -403,7 +319,6 @@ public final class WsController implements Controller
         UnrouteFW unrouteRO = unrouteRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
                                        .correlationId(correlationId)
                                        .role(b -> b.set(role))
-                                       .state(b -> b.set(state))
                                        .source(source)
                                        .sourceRef(sourceRef)
                                        .target(target)

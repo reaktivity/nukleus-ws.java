@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.ws.internal.routable;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.agrona.BitUtil.SIZE_OF_BYTE;
 import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.reaktivity.nukleus.ws.internal.util.BufferUtil.xor;
@@ -26,8 +27,10 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.AtomicBuffer;
 import org.agrona.concurrent.MessageHandler;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.agrona.concurrent.ringbuffer.RingBuffer;
 import org.reaktivity.nukleus.Nukleus;
+import org.reaktivity.nukleus.ws.internal.WsNukleus;
 import org.reaktivity.nukleus.ws.internal.layouts.StreamsLayout;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
@@ -45,6 +48,8 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW;
 
 public final class Target implements Nukleus
 {
+    private static final DirectBuffer SOURCE_NAME_BUFFER = new UnsafeBuffer(WsNukleus.NAME.getBytes(UTF_8));
+
     private final FrameFW frameRO = new FrameFW();
 
     private final WsFrameFW.Builder wsFrameRW = new WsFrameFW.Builder();
@@ -142,8 +147,9 @@ public final class Target implements Nukleus
         String protocol)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .referenceId(targetRef)
                 .streamId(targetId)
+                .source(SOURCE_NAME_BUFFER, 0, SOURCE_NAME_BUFFER.capacity())
+                .sourceRef(targetRef)
                 .correlationId(correlationId)
                 .extension(e -> e.set(visitWsBeginEx(protocol)))
                 .build();
@@ -189,7 +195,8 @@ public final class Target implements Nukleus
     {
         BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .referenceId(targetRef)
+                .source(SOURCE_NAME_BUFFER, 0, SOURCE_NAME_BUFFER.capacity())
+                .sourceRef(targetRef)
                 .correlationId(correlationId)
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();

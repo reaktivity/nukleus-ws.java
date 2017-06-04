@@ -187,12 +187,12 @@ public final class TargetOutputEstablishedStreamFactory
             int index,
             int length)
         {
-            beginRO.wrap(buffer, index, index + length);
+            final BeginFW begin = beginRO.wrap(buffer, index, index + length);
 
-            final long newSourceId = beginRO.streamId();
-            final long sourceRef = beginRO.referenceId();
-            final long targetCorrelationId = beginRO.correlationId();
-            final OctetsFW extension = beginRO.extension();
+            final long newSourceId = begin.streamId();
+            final long sourceRef = begin.sourceRef();
+            final long targetCorrelationId = begin.correlationId();
+            final OctetsFW extension = begin.extension();
 
             final Correlation correlation = correlateEstablished.apply(targetCorrelationId);
 

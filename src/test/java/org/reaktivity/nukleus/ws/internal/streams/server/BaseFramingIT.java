@@ -54,7 +54,7 @@ public class BaseFramingIT
     @Test
     @Ignore("No way to read or write 0 length data frame at high level: reaktivity/k3po-nukleus-ext.java#11")
     @Specification({
-        "${route}/input/new/controller",
+        "${route}/server/controller",
         "${client}/echo.binary.payload.length.0/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.0/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength0() throws Exception
@@ -64,7 +64,7 @@ public class BaseFramingIT
 
     @Test
     @Specification({
-        "${route}/input/new/controller",
+        "${route}/server/controller",
         "${client}/echo.binary.payload.length.125/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.125/handshake.response.and.frame" })
     // TODO: Currently this test fails because ws nukleus does not handle payload fragmentation

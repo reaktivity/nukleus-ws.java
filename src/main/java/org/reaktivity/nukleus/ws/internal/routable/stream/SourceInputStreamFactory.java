@@ -250,12 +250,12 @@ public final class SourceInputStreamFactory
             int index,
             int length)
         {
-            beginRO.wrap(buffer, index, index + length);
+            final BeginFW begin = beginRO.wrap(buffer, index, index + length);
 
-            final long newSourceId = beginRO.streamId();
-            final long sourceRef = beginRO.referenceId();
-            final long correlationId = beginRO.correlationId();
-            final OctetsFW extension = beginRO.extension();
+            final long newSourceId = begin.streamId();
+            final long sourceRef = begin.sourceRef();
+            final long correlationId = begin.correlationId();
+            final OctetsFW extension = begin.extension();
 
             // TODO: need lightweight approach (start)
             final HttpBeginExFW httpBeginEx = extension.get(httpBeginExRO::wrap);

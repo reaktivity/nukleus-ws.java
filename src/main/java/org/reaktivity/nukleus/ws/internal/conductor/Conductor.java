@@ -21,7 +21,6 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.agrona.concurrent.broadcast.BroadcastTransmitter;
 import org.agrona.concurrent.ringbuffer.RingBuffer;
 import org.reaktivity.nukleus.Nukleus;
-import org.reaktivity.nukleus.Reaktive;
 import org.reaktivity.nukleus.ws.internal.Context;
 import org.reaktivity.nukleus.ws.internal.router.Router;
 import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
@@ -33,7 +32,6 @@ import org.reaktivity.nukleus.ws.internal.types.control.UnrouteFW;
 import org.reaktivity.nukleus.ws.internal.types.control.UnroutedFW;
 import org.reaktivity.nukleus.ws.internal.types.control.WsRouteExFW;
 
-@Reaktive
 public final class Conductor implements Nukleus
 {
     private final RouteFW routeRO = new RouteFW();

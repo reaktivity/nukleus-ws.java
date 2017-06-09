@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.ws.internal;
 
 import org.reaktivity.nukleus.Configuration;
+import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactorySpi;
 import org.reaktivity.nukleus.ws.internal.conductor.Conductor;
 import org.reaktivity.nukleus.ws.internal.router.Router;
@@ -30,7 +31,9 @@ public final class WsNukleusFactorySpi implements NukleusFactorySpi
     }
 
     @Override
-    public WsNukleus create(Configuration config)
+    public WsNukleus create(
+        Configuration config,
+        NukleusBuilder builder)
     {
         Context context = new Context();
         context.conclude(config);

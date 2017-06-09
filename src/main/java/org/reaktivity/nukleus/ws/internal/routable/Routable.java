@@ -36,7 +36,6 @@ import org.agrona.concurrent.AtomicBuffer;
 import org.agrona.concurrent.MessageHandler;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Nukleus;
-import org.reaktivity.nukleus.Reaktive;
 import org.reaktivity.nukleus.ws.internal.Context;
 import org.reaktivity.nukleus.ws.internal.conductor.Conductor;
 import org.reaktivity.nukleus.ws.internal.layouts.StreamsLayout;
@@ -44,7 +43,6 @@ import org.reaktivity.nukleus.ws.internal.routable.stream.Slab;
 import org.reaktivity.nukleus.ws.internal.router.Correlation;
 import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
-@Reaktive
 public final class Routable extends Nukleus.Composite
 {
     private static final List<Route> EMPTY_ROUTES = emptyList();

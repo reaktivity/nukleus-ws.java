@@ -28,7 +28,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.ws.internal.WsController;
-import org.reaktivity.reaktor.test.ControllerRule;
+import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class ControllerIT
 {
@@ -38,14 +38,15 @@ public class ControllerIT
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
 
-    private final ControllerRule controller = new ControllerRule(WsController.class)
+    private final ReaktorRule reaktor = new ReaktorRule()
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024);
+        .counterValuesBufferCapacity(1024)
+        .controller(WsController.class::isAssignableFrom);
 
     @Rule
-    public final TestRule chain = outerRule(k3po).around(timeout).around(controller);
+    public final TestRule chain = outerRule(k3po).around(timeout).around(reaktor);
 
     @Test
     @Specification({
@@ -57,9 +58,9 @@ public class ControllerIT
 
         k3po.start();
 
-        controller.controller(WsController.class)
-                  .routeServer("source", 0L, "target", targetRef, "sub-protocol")
-                  .get();
+        reaktor.controller(WsController.class)
+               .routeServer("source", 0L, "target", targetRef, "sub-protocol")
+               .get();
 
         k3po.finish();
     }
@@ -74,9 +75,9 @@ public class ControllerIT
 
         k3po.start();
 
-        controller.controller(WsController.class)
-                  .routeClient("source", 0L, "target", targetRef, "sub-protocol")
-                  .get();
+        reaktor.controller(WsController.class)
+               .routeClient("source", 0L, "target", targetRef, "sub-protocol")
+               .get();
 
         k3po.finish();
     }
@@ -92,15 +93,15 @@ public class ControllerIT
 
         k3po.start();
 
-        long sourceRef = controller.controller(WsController.class)
+        long sourceRef = reaktor.controller(WsController.class)
                   .routeServer("source", 0L, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.notifyBarrier("ROUTED_SERVER");
 
-        controller.controller(WsController.class)
-                  .unrouteServer("source", sourceRef, "target", targetRef, "sub-protocol")
-                  .get();
+        reaktor.controller(WsController.class)
+               .unrouteServer("source", sourceRef, "target", targetRef, "sub-protocol")
+               .get();
 
         k3po.finish();
     }
@@ -116,15 +117,15 @@ public class ControllerIT
 
         k3po.start();
 
-        long sourceRef = controller.controller(WsController.class)
+        long sourceRef = reaktor.controller(WsController.class)
                   .routeClient("source", 0L, "target", targetRef, "sub-protocol")
                   .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
-        controller.controller(WsController.class)
-                  .unrouteClient("source", sourceRef, "target", targetRef, "sub-protocol")
-                  .get();
+        reaktor.controller(WsController.class)
+               .unrouteClient("source", sourceRef, "target", targetRef, "sub-protocol")
+               .get();
 
         k3po.finish();
     }

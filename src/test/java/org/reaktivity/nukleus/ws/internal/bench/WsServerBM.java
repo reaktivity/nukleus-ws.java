@@ -61,7 +61,7 @@ import org.reaktivity.nukleus.ws.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.HttpBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WindowFW;
-import org.reaktivity.reaktor.internal.Reaktor;
+import org.reaktivity.reaktor.Reaktor;
 
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.Throughput)
@@ -80,7 +80,13 @@ public class WsServerBM
         properties.setProperty(STREAMS_BUFFER_CAPACITY_PROPERTY_NAME, Long.toString(1024L * 1024L * 16L));
 
         configuration = new Configuration(properties);
-        reaktor = Reaktor.launch(configuration, n -> "ws".equals(n), WsController.class::isAssignableFrom);
+        reaktor = Reaktor.builder()
+                         .config(configuration)
+                         .nukleus("ws"::equals)
+                         .controller(WsController.class::isAssignableFrom)
+                         .errorHandler(ex -> ex.printStackTrace(System.err))
+                         .build()
+                         .start();
     }
 
     private final BeginFW beginRO = new BeginFW();

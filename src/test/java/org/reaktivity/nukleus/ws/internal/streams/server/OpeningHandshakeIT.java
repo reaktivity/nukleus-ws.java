@@ -38,7 +38,7 @@ public class OpeningHandshakeIT
             .addScriptRoot("client", "org/reaktivity/specification/ws/opening")
             .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/opening");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
 
     private final NukleusRule nukleus = new NukleusRule("ws")
         .directory("target/nukleus-itests")
@@ -55,6 +55,16 @@ public class OpeningHandshakeIT
         "${client}/connection.established/handshake.request",
         "${server}/connection.established/handshake.response" })
     public void shouldEstablishConnection() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/server/controller",
+        "${client}/request.header.sec.websocket.protocol/handshake.request",
+        "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithRequestHeaderSecWebSocketProtocol() throws Exception
     {
         k3po.finish();
     }

@@ -59,7 +59,7 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeServer("source", 0L, "target", targetRef, "sub-protocol")
+               .routeServer("source", 0L, "target", targetRef, "primary")
                .get();
 
         k3po.finish();
@@ -76,7 +76,7 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeClient("source", 0L, "target", targetRef, "sub-protocol")
+               .routeClient("source", 0L, "target", targetRef, "primary")
                .get();
 
         k3po.finish();
@@ -94,13 +94,13 @@ public class ControllerIT
         k3po.start();
 
         long sourceRef = reaktor.controller(WsController.class)
-                  .routeServer("source", 0L, "target", targetRef, "sub-protocol")
+                  .routeServer("source", 0L, "target", targetRef, "primary")
                   .get();
 
         k3po.notifyBarrier("ROUTED_SERVER");
 
         reaktor.controller(WsController.class)
-               .unrouteServer("source", sourceRef, "target", targetRef, "sub-protocol")
+               .unrouteServer("source", sourceRef, "target", targetRef, "primary")
                .get();
 
         k3po.finish();
@@ -118,13 +118,13 @@ public class ControllerIT
         k3po.start();
 
         long sourceRef = reaktor.controller(WsController.class)
-                  .routeClient("source", 0L, "target", targetRef, "sub-protocol")
+                  .routeClient("source", 0L, "target", targetRef, "primary")
                   .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(WsController.class)
-               .unrouteClient("source", sourceRef, "target", targetRef, "sub-protocol")
+               .unrouteClient("source", sourceRef, "target", targetRef, "primary")
                .get();
 
         k3po.finish();

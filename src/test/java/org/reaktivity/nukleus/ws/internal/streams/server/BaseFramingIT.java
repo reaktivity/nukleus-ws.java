@@ -40,7 +40,7 @@ public class BaseFramingIT
             // TODO: remove the following when all tests have been completed
             .addScriptRoot("streams", "org/reaktivity/specification/ws/framing");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
 
     private final NukleusRule nukleus = new NukleusRule("ws")
         .directory("target/nukleus-itests")
@@ -67,7 +67,6 @@ public class BaseFramingIT
         "${route}/server/controller",
         "${client}/echo.binary.payload.length.125/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.125/handshake.response.and.frame" })
-    // TODO: Currently this test fails because ws nukleus does not handle payload fragmentation
     public void shouldEchoBinaryFrameWithPayloadLength125() throws Exception
     {
         k3po.finish();

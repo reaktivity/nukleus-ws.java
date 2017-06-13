@@ -272,6 +272,10 @@ public final class TargetOutputEstablishedStreamFactory
                         headers.item(h -> h.name("sec-websocket-protocol").value(negotiated));
                     }
                 }
+                else if(protocol != null)
+                {
+                    headers.item(h -> h.name("sec-websocket-protocol").value(protocol));
+                }
             };
         }
 

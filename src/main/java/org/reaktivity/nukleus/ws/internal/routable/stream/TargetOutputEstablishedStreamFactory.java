@@ -307,8 +307,10 @@ public final class TargetOutputEstablishedStreamFactory
 
             final int httpUpdate = windowRO.update();
             final int wsUpdate = httpUpdate - ENCODE_OVERHEAD_MAXIMUM;
-
-            source.doWindow(sourceId, wsUpdate);
+            if (wsUpdate > 0)
+            {
+                source.doWindow(sourceId, wsUpdate);
+            }
         }
 
         private void processReset(

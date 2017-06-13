@@ -21,9 +21,11 @@ import static java.nio.file.StandardWatchEventKinds.OVERFLOW;
 import static java.util.Arrays.stream;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
+import java.nio.file.WatchEvent.Kind;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.HashMap;
@@ -150,7 +152,8 @@ public final class Watcher implements Nukleus
             try
             {
                 streamsPath.toFile().mkdirs();
-                streamsKey = streamsPath.register(service, ENTRY_CREATE, ENTRY_DELETE, OVERFLOW);
+                final Kind<?>[] eventKinds = new WatchEvent.Kind<?>[] { ENTRY_CREATE, ENTRY_DELETE, OVERFLOW };
+                streamsKey = streamsPath.register(service, eventKinds, getSensistivityModifier());
                 syncWithFileSystem();
             }
             catch (IOException ex)
@@ -164,5 +167,23 @@ public final class Watcher implements Nukleus
     {
         sourcePaths.stream().filter(p -> !p.toFile().exists()).forEach(this::handleDeletePath);
         stream(streamsPath.toFile().listFiles()).map(f -> f.toPath()).forEach(this::handleCreatePath);
+    }
+
+    private static WatchEvent.Modifier getSensistivityModifier()
+    {
+        WatchEvent.Modifier modifier = null;
+
+        try
+        {
+            Class<?> clazz = Class.forName("com.sun.nio.file.SensitivityWatchEventModifier");
+            Field field = clazz.getField("HIGH");
+            modifier = WatchEvent.Modifier.class.cast(field.get(clazz));
+        }
+        catch (Exception ex)
+        {
+            // ignore
+        }
+
+        return modifier;
     }
 }

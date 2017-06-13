@@ -26,7 +26,7 @@ import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.reaktor.test.NukleusRule;
+import org.reaktivity.reaktor.test.ReaktorRule;
 
 /**
  * RFC-6455, section 5.2 "Base Framing Protocol"
@@ -40,13 +40,15 @@ public class BaseFramingIT
             // TODO: remove the following when all tests have been completed
             .addScriptRoot("streams", "org/reaktivity/specification/ws/framing");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
-    private final NukleusRule nukleus = new NukleusRule("ws")
+    private final ReaktorRule nukleus = new ReaktorRule()
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024);
+        .counterValuesBufferCapacity(1024)
+        .nukleus("ws"::equals)
+        .clean();
 
     @Rule
     public final TestRule chain = outerRule(nukleus).around(k3po).around(timeout);
@@ -67,7 +69,6 @@ public class BaseFramingIT
         "${route}/server/controller",
         "${client}/echo.binary.payload.length.125/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.125/handshake.response.and.frame" })
-    // TODO: Currently this test fails because ws nukleus does not handle payload fragmentation
     public void shouldEchoBinaryFrameWithPayloadLength125() throws Exception
     {
         k3po.finish();

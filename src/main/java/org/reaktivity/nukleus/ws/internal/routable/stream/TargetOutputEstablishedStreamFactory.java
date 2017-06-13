@@ -192,7 +192,6 @@ public final class TargetOutputEstablishedStreamFactory
             final long newSourceId = begin.streamId();
             final long sourceRef = begin.sourceRef();
             final long targetCorrelationId = begin.correlationId();
-            final OctetsFW extension = begin.extension();
 
             final Correlation correlation = correlateEstablished.apply(targetCorrelationId);
 
@@ -271,6 +270,10 @@ public final class TargetOutputEstablishedStreamFactory
                     {
                         headers.item(h -> h.name("sec-websocket-protocol").value(negotiated));
                     }
+                }
+                else if (protocol != null)
+                {
+                    headers.item(h -> h.name("sec-websocket-protocol").value(protocol));
                 }
             };
         }

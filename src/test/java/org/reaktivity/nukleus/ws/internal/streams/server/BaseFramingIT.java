@@ -76,8 +76,9 @@ public class BaseFramingIT
 
     @Test
     @Specification({
-        "${streams}/echo.binary.payload.length.126/handshake.request.and.frame",
-        "${streams}/echo.binary.payload.length.126/handshake.response.and.frame" })
+        "${route}/server/controller",
+        "${client}/echo.binary.payload.length.126/handshake.request.and.frame",
+        "${server}/echo.binary.payload.length.126/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength126() throws Exception
     {
         k3po.finish();
@@ -103,8 +104,9 @@ public class BaseFramingIT
 
     @Test
     @Specification({
-        "${streams}/echo.binary.payload.length.65535/handshake.request.and.frame",
-        "${streams}/echo.binary.payload.length.65535/handshake.response.and.frame" })
+        "${route}/server/controller",
+        "${client}/echo.binary.payload.length.65535/handshake.request.and.frame",
+        "${server}/echo.binary.payload.length.65535/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength65535() throws Exception
     {
         k3po.finish();

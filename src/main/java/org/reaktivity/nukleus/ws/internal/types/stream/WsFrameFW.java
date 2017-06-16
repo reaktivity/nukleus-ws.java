@@ -224,6 +224,14 @@ public final class WsFrameFW extends Flyweight
                 }
                 break;
             case 128:
+            case 256:
+            case 512:
+            case 1024:
+            case 2048:
+            case 4096:
+            case 8192:
+            case 16384:
+            case 32768:
                 buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) 126);
                 buffer().putShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, (short) length, ByteOrder.BIG_ENDIAN);
                 buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3, buffer, offset, length);

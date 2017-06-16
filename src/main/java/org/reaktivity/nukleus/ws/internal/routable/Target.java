@@ -44,7 +44,7 @@ import org.reaktivity.nukleus.ws.internal.types.stream.HttpBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsDataExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsEndExFW;
-import org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW;
+import org.reaktivity.nukleus.ws.internal.types.stream.WsHeaderFW;
 
 public final class Target implements Nukleus
 {
@@ -52,7 +52,7 @@ public final class Target implements Nukleus
 
     private final FrameFW frameRO = new FrameFW();
 
-    private final WsFrameFW.Builder wsFrameRW = new WsFrameFW.Builder();
+    private final WsHeaderFW.Builder wsFrameRW = new WsHeaderFW.Builder();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
@@ -157,22 +157,20 @@ public final class Target implements Nukleus
         streamsBuffer.write(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
     }
 
-    public int doWsData(
+    public void doWsData(
         long targetId,
         int flags,
         int maskKey,
-        DirectBuffer payload)
+        OctetsFW payload)
     {
-        final int capacity = payload.capacity();
+        final int capacity = payload.sizeof();
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .payload(p -> p.set(payload, 0, capacity).set((b, o, l) -> xor(b, o, o + capacity, maskKey)))
+                .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskKey)))
                 .extension(e -> e.set(visitWsDataEx(flags)))
                 .build();
 
         streamsBuffer.write(data.typeId(), data.buffer(), data.offset(), data.sizeof());
-
-        return data.sizeof();
     }
 
     public void doWsEnd(
@@ -209,14 +207,20 @@ public final class Target implements Nukleus
         OctetsFW payload,
         int flagsAndOpcode)
     {
-        WsFrameFW wsFrame = wsFrameRW.wrap(writeBuffer, SIZE_OF_LONG + SIZE_OF_BYTE, writeBuffer.capacity())
-                .payload(payload.buffer(), payload.offset(), payload.sizeof())
+        WsHeaderFW wsHeader = wsFrameRW.wrap(writeBuffer, SIZE_OF_LONG + SIZE_OF_BYTE, writeBuffer.capacity())
+                .length(payload.sizeof())
                 .flagsAndOpcode(flagsAndOpcode)
                 .build();
 
         DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .payload(p -> p.set(wsFrame.buffer(), wsFrame.offset(), wsFrame.sizeof()))
+                .payload(p -> p.set((b, o, m) ->
+                {
+                    int wsSize = wsHeader.sizeof();
+                    b.putBytes(o, wsHeader.buffer(), wsHeader.offset(), wsSize);
+                    b.putBytes(o + wsSize, payload.buffer(), payload.offset(), payload.sizeof());
+                    return wsSize + payload.sizeof();
+                }))
                 .extension(e -> e.reset())
                 .build();
 

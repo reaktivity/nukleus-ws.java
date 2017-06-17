@@ -22,11 +22,9 @@ import java.nio.ByteOrder;
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
-import org.agrona.concurrent.AtomicBuffer;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 
-public final class WsFrameFW extends Flyweight
+public final class WsHeaderFW extends Flyweight
 {
     public static final short STATUS_NORMAL_CLOSURE = (short) 1000;
     public static final short STATUS_GOING_AWAY = (short) 1001;
@@ -44,8 +42,6 @@ public final class WsFrameFW extends Flyweight
     private static final int FIELD_OFFSET_MASK_AND_LENGTH = FIELD_OFFSET_FLAGS_AND_OPCODE + FIELD_SIZE_FLAGS_AND_OPCODE;
 
     private static final int FIELD_SIZE_MASKING_KEY = BitUtil.SIZE_OF_INT;
-
-    private final AtomicBuffer payloadRO = new UnsafeBuffer(new byte[0]);
 
     public boolean fin()
     {
@@ -87,15 +83,22 @@ public final class WsFrameFW extends Flyweight
         return buffer().getInt(offset() + FIELD_OFFSET_FLAGS_AND_OPCODE + FIELD_SIZE_FLAGS_AND_OPCODE + lengthSize());
     }
 
-    public DirectBuffer payload()
+    public int length()
     {
-        return payloadRO;
+        return length(buffer(), offset());
     }
 
     @Override
     public int limit()
     {
-        return payloadOffset() + length();
+        int payloadOffset = offset() + FIELD_SIZE_FLAGS_AND_OPCODE + lengthSize();
+
+        if (mask())
+        {
+            payloadOffset += FIELD_SIZE_MASKING_KEY;
+        }
+
+        return payloadOffset;
     }
 
     public boolean canWrap(DirectBuffer buffer, int offset, int maxLimit)
@@ -110,13 +113,6 @@ public final class WsFrameFW extends Flyweight
         byte secondByte = buffer.getByte(offset + 1);
         wsFrameLength += lengthSize(secondByte) - 1;
 
-        if(maxLength < wsFrameLength)
-        {
-            return false;
-        }
-
-        wsFrameLength += length(buffer, offset);
-
         if(isMasked(secondByte))
         {
             wsFrameLength+= 4;
@@ -127,11 +123,9 @@ public final class WsFrameFW extends Flyweight
     }
 
     @Override
-    public WsFrameFW wrap(DirectBuffer buffer, int offset, int maxLimit)
+    public WsHeaderFW wrap(DirectBuffer buffer, int offset, int maxLimit)
     {
         super.wrap(buffer, offset, maxLimit);
-
-        payloadRO.wrap(buffer, payloadOffset(), length());
 
         checkLimit(limit(), maxLimit);
 
@@ -144,33 +138,16 @@ public final class WsFrameFW extends Flyweight
         return String.format("[fin=%s, opcode=%d, payload.length=%d]", fin(), opcode(), length());
     }
 
-    private int payloadOffset()
-    {
-        int payloadOffset = offset() + FIELD_SIZE_FLAGS_AND_OPCODE + lengthSize();
-
-        if (mask())
-        {
-            payloadOffset += FIELD_SIZE_MASKING_KEY;
-        }
-
-        return payloadOffset;
-    }
-
     private int lengthSize()
     {
         return lengthSize(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
     }
 
-    private int length()
-    {
-        return length(buffer(), offset());
-    }
-
-    public static final class Builder extends Flyweight.Builder<WsFrameFW>
+    public static final class Builder extends Flyweight.Builder<WsHeaderFW>
     {
         public Builder()
         {
-            super(new WsFrameFW());
+            super(new WsHeaderFW());
         }
 
         @Override
@@ -186,12 +163,7 @@ public final class WsFrameFW extends Flyweight
             return this;
         }
 
-        public Builder payload(DirectBuffer buffer)
-        {
-            return payload(buffer, 0, buffer.capacity());
-        }
-
-        public Builder payload(DirectBuffer buffer, int offset, int length)
+        public Builder length(int length)
         {
             switch (highestOneBit(length))
             {
@@ -203,8 +175,7 @@ public final class WsFrameFW extends Flyweight
             case 16:
             case 32:
                 buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) length);
-                buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, buffer, offset, length);
-                super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1 + length);
+                super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1);
                 break;
             case 64:
                 switch (length)
@@ -213,27 +184,31 @@ public final class WsFrameFW extends Flyweight
                 case 127:
                     buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) 126);
                     buffer().putShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, (short) length, ByteOrder.BIG_ENDIAN);
-                    buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3, buffer, offset, length);
-                    super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3 + length);
+                    super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3);
                     break;
                 default:
                     buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) length);
-                    buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, buffer, offset, length);
-                    super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1 + length);
+                    super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1);
                     break;
                 }
                 break;
             case 128:
+            case 256:
+            case 512:
+            case 1024:
+            case 2048:
+            case 4096:
+            case 8192:
+            case 16384:
+            case 32768:
                 buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) 126);
                 buffer().putShort(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, (short) length, ByteOrder.BIG_ENDIAN);
-                buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3, buffer, offset, length);
-                super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3 + length);
+                super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 3);
                 break;
             default:
                 buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte) 127);
                 buffer().putLong(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 1, length, ByteOrder.BIG_ENDIAN);
-                buffer().putBytes(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 9, buffer, offset, length);
-                super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 9 + length);
+                super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + 9);
                 break;
             }
 

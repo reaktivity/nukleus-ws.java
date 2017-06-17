@@ -21,8 +21,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.agrona.BitUtil.SIZE_OF_SHORT;
 import static org.reaktivity.nukleus.ws.internal.routable.Route.protocolMatches;
 import static org.reaktivity.nukleus.ws.internal.router.RouteKind.OUTPUT_ESTABLISHED;
-import static org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW.STATUS_NORMAL_CLOSURE;
-import static org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW.STATUS_PROTOCOL_ERROR;
+import static org.reaktivity.nukleus.ws.internal.types.stream.WsHeaderFW.STATUS_NORMAL_CLOSURE;
+import static org.reaktivity.nukleus.ws.internal.types.stream.WsHeaderFW.STATUS_PROTOCOL_ERROR;
 
 import java.security.MessageDigest;
 import java.util.Base64;
@@ -51,7 +51,7 @@ import org.reaktivity.nukleus.ws.internal.types.stream.FrameFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.HttpBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WindowFW;
-import org.reaktivity.nukleus.ws.internal.types.stream.WsFrameFW;
+import org.reaktivity.nukleus.ws.internal.types.stream.WsHeaderFW;
 import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
 public final class SourceInputStreamFactory
@@ -76,7 +76,7 @@ public final class SourceInputStreamFactory
 
     private final HttpBeginExFW httpBeginExRO = new HttpBeginExFW();
 
-    private final WsFrameFW wsFrameRO = new WsFrameFW();
+    private final WsHeaderFW wsHeaderRO = new WsHeaderFW();
 
     private final WindowFW windowRO = new WindowFW();
     private final ResetFW resetRO = new ResetFW();
@@ -109,6 +109,7 @@ public final class SourceInputStreamFactory
     private final class SourceInputStream
     {
         private MessageHandler streamState;
+        private LongObjectBiConsumer<OctetsFW> decodeState;
 
         private long sourceId;
 
@@ -119,9 +120,14 @@ public final class SourceInputStreamFactory
         private int slabSlotLimit = 0;
         private int slabSlotOffset = 0;
 
+        private int payloadProgress;
+        private int payloadLength;
+        private int maskingKey;
+
         private SourceInputStream()
         {
             this.streamState = this::beforeBegin;
+            this.decodeState = this::decodeHeader;
         }
 
         private void handleStream(
@@ -335,7 +341,7 @@ public final class SourceInputStreamFactory
             }
 
             long streamId = data.streamId();
-            processPayload(payload, streamId);
+            decodeState.accept(streamId, payload);
         }
 
         private void processEnd(
@@ -354,9 +360,9 @@ public final class SourceInputStreamFactory
             target.removeThrottle(targetId);
         }
 
-        private int processPayload(
-            final OctetsFW httpPayload,
-            final long streamId)
+        private int decodeHeader(
+            final long streamId,
+            final OctetsFW httpPayload)
         {
             final DirectBuffer buffer = httpPayload.buffer();
             final int offset = httpPayload.offset();
@@ -364,14 +370,32 @@ public final class SourceInputStreamFactory
 
             int bytesWritten = 0;
             int nextOffset = offset;
-            for (; nextOffset < limit; nextOffset = wsFrameRO.limit())
+            for (; nextOffset < limit; nextOffset = wsHeaderRO.limit())
             {
-                if(wsFrameRO.canWrap(buffer, nextOffset, limit))
+                if(wsHeaderRO.canWrap(buffer, nextOffset, limit))
                 {
-                    wsFrameRO.wrap(buffer, nextOffset, limit);
-                    if (wsFrameRO.mask() && wsFrameRO.maskingKey() != 0L)
+                    final WsHeaderFW wsHeader = wsHeaderRO.wrap(buffer, nextOffset, limit);
+                    if (wsHeader.mask() && wsHeader.maskingKey() != 0L)
                     {
-                            bytesWritten = processFrame(bytesWritten);
+                        this.maskingKey = wsHeader.maskingKey();
+                        this.payloadLength = wsHeader.length();
+                        this.payloadProgress = 0;
+                        switch (wsHeader.opcode())
+                        {
+                        case 1:
+                            this.decodeState = this::decodeText;
+                            break;
+                        case 2:
+                            this.decodeState = this::decodeBinary;
+                            break;
+                        case 8:
+                            this.decodeState = this::decodeClose;
+                            break;
+                        default:
+                            throw new IllegalStateException("not yet implemented");
+                        }
+                        httpPayload.wrap(httpPayload.buffer(), httpPayload.offset() + wsHeader.sizeof(), httpPayload.limit());
+                        this.decodeState.accept(streamId, httpPayload);
                     }
                     else
                     {
@@ -406,28 +430,68 @@ public final class SourceInputStreamFactory
             return bytesWritten;
         }
 
-        private int processFrame(int bytesWritten)
+        private void decodeText(
+            final long streamId,
+            final OctetsFW payload)
         {
-            final int maskingKey = wsFrameRO.maskingKey();
-            final DirectBuffer payload = wsFrameRO.payload();
+            // TODO canWrap for UTF-8 split multi-byte characters
+            final int payloadSize = payload.sizeof();
+            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
 
-            switch (wsFrameRO.opcode())
+            payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+            target.doWsData(targetId, 0x81, maskingKey, payload);
+
+            payloadProgress += decodeBytes;
+            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+            if (payloadProgress == payloadLength)
             {
-            case 1: // TEXT
-                bytesWritten += target.doWsData(targetId, 0x81, maskingKey, payload);
-                break;
-            case 2: // BINARY
-                bytesWritten += target.doWsData(targetId, 0x82, maskingKey, payload);
-                break;
-            case 8: // CLOSE
-                final short status = payload.capacity() >=
-                    SIZE_OF_SHORT ? payload.getShort(0) : STATUS_NORMAL_CLOSURE;
-                target.doWsEnd(targetId, status);
-                break;
-            default:
-                throw new IllegalStateException("not yet implemented");
+                this.decodeState = this::decodeHeader;
             }
-            return bytesWritten;
+
+            if (payloadSize > payload.sizeof())
+            {
+                payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
+                this.decodeState.accept(streamId, payload);
+            }
+        }
+
+        private void decodeBinary(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            final int payloadSize = payload.sizeof();
+            if (payloadSize > 0)
+            {
+                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+                target.doWsData(targetId, 0x82, maskingKey, payload);
+
+                payloadProgress += decodeBytes;
+                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                if (payloadSize > payload.sizeof())
+                {
+                    payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
+                    this.decodeState.accept(streamId, payload);
+                }
+            }
+        }
+
+        private void decodeClose(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            // canWrap?
+            final short status = payload.sizeof() >=
+                SIZE_OF_SHORT ? payload.buffer().getShort(payload.offset()) : STATUS_NORMAL_CLOSURE;
+            target.doWsEnd(targetId, status);
         }
 
         private Optional<Route> resolveTarget(
@@ -485,7 +549,7 @@ public final class SourceInputStreamFactory
 
             final int update = windowRO.update();
 
-            source.doWindow(sourceId, update + headerSize(update));
+            source.doWindow(sourceId, update - headerSize(update));
         }
 
         private void processReset(

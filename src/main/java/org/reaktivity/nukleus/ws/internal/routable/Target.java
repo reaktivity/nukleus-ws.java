@@ -207,24 +207,44 @@ public final class Target implements Nukleus
         OctetsFW payload,
         int flagsAndOpcode)
     {
+        final int payloadSize = payload.sizeof();
+
         WsHeaderFW wsHeader = wsFrameRW.wrap(writeBuffer, SIZE_OF_LONG + SIZE_OF_BYTE, writeBuffer.capacity())
-                .length(payload.sizeof())
+                .length(payloadSize)
                 .flagsAndOpcode(flagsAndOpcode)
                 .build();
+
+        final int wsHeaderSize = wsHeader.sizeof();
+        final int payloadFragmentSize = Math.min((1 << Short.SIZE) - 1 - wsHeaderSize,  payloadSize);
 
         DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .payload(p -> p.set((b, o, m) ->
                 {
-                    int wsSize = wsHeader.sizeof();
-                    b.putBytes(o, wsHeader.buffer(), wsHeader.offset(), wsSize);
-                    b.putBytes(o + wsSize, payload.buffer(), payload.offset(), payload.sizeof());
-                    return wsSize + payload.sizeof();
+                    b.putBytes(o, wsHeader.buffer(), wsHeader.offset(), wsHeaderSize);
+                    b.putBytes(o + wsHeaderSize, payload.buffer(), payload.offset(), payloadFragmentSize);
+                    return wsHeaderSize + payloadFragmentSize;
                 }))
                 .extension(e -> e.reset())
                 .build();
 
         streamsBuffer.write(data.typeId(), data.buffer(), data.offset(), data.sizeof());
+
+        final int payloadRemaining = payloadSize - payloadFragmentSize;
+        if (payloadRemaining > 0)
+        {
+            DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .streamId(targetId)
+                .payload(p -> p.set((b, o, m) ->
+                {
+                    b.putBytes(o, payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining);
+                    return payloadRemaining;
+                }))
+                .extension(e -> e.reset())
+                .build();
+
+            streamsBuffer.write(data2.typeId(), data2.buffer(), data2.offset(), data2.sizeof());
+        }
     }
 
     public void doHttpEnd(

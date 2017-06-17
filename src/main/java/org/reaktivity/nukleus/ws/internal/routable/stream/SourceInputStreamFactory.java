@@ -549,7 +549,7 @@ public final class SourceInputStreamFactory
 
             final int update = windowRO.update();
 
-            source.doWindow(sourceId, update + headerSize(update));
+            source.doWindow(sourceId, update - headerSize(update));
         }
 
         private void processReset(

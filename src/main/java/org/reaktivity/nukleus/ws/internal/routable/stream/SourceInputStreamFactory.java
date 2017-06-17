@@ -360,7 +360,7 @@ public final class SourceInputStreamFactory
             target.removeThrottle(targetId);
         }
 
-        private int decodeHeader(
+        private void decodeHeader(
             final long streamId,
             final OctetsFW httpPayload)
         {
@@ -368,66 +368,60 @@ public final class SourceInputStreamFactory
             final int offset = httpPayload.offset();
             final int limit = httpPayload.limit();
 
-            int bytesWritten = 0;
-            int nextOffset = offset;
-            for (; nextOffset < limit; nextOffset = wsHeaderRO.limit())
+            if(wsHeaderRO.canWrap(buffer, offset, limit))
             {
-                if(wsHeaderRO.canWrap(buffer, nextOffset, limit))
+                final WsHeaderFW wsHeader = wsHeaderRO.wrap(buffer, offset, limit);
+                if (wsHeader.mask() && wsHeader.maskingKey() != 0L)
                 {
-                    final WsHeaderFW wsHeader = wsHeaderRO.wrap(buffer, nextOffset, limit);
-                    if (wsHeader.mask() && wsHeader.maskingKey() != 0L)
+                    this.maskingKey = wsHeader.maskingKey();
+                    this.payloadLength = wsHeader.length();
+                    this.payloadProgress = 0;
+
+                    switch (wsHeader.opcode())
                     {
-                        this.maskingKey = wsHeader.maskingKey();
-                        this.payloadLength = wsHeader.length();
-                        this.payloadProgress = 0;
-                        switch (wsHeader.opcode())
-                        {
-                        case 1:
-                            this.decodeState = this::decodeText;
-                            break;
-                        case 2:
-                            this.decodeState = this::decodeBinary;
-                            break;
-                        case 8:
-                            this.decodeState = this::decodeClose;
-                            break;
-                        default:
-                            throw new IllegalStateException("not yet implemented");
-                        }
-                        httpPayload.wrap(httpPayload.buffer(), httpPayload.offset() + wsHeader.sizeof(), httpPayload.limit());
-                        this.decodeState.accept(streamId, httpPayload);
+                    case 1:
+                        this.decodeState = this::decodeText;
+                        break;
+                    case 2:
+                        this.decodeState = this::decodeBinary;
+                        break;
+                    case 8:
+                        this.decodeState = this::decodeClose;
+                        break;
+                    default:
+                        throw new IllegalStateException("not yet implemented");
                     }
-                    else
-                    {
-                        target.doWsEnd(targetId, STATUS_PROTOCOL_ERROR);
-                    }
+
+                    httpPayload.wrap(httpPayload.buffer(), httpPayload.offset() + wsHeader.sizeof(), httpPayload.limit());
+                    this.decodeState.accept(streamId, httpPayload);
                 }
                 else
                 {
-                    if(this.slabSlot == SLAB_SLOT_NOT_ALLOCATED)
-                    {
-                        // if not in SLAB already, then add to SLAB
-                        this.slabSlot = slab.acquire(streamId);
-                        MutableDirectBuffer slabBuffer = slab.buffer(slabSlot);
-                        slabBuffer.putBytes(0, buffer, nextOffset, limit);
-                        this.slabSlotLimit = limit - nextOffset;
-                    }
-                    else
-                    {
-                        this.slabSlotOffset = nextOffset;
-                    }
-                    break;
+                    target.doWsEnd(targetId, STATUS_PROTOCOL_ERROR);
+                }
+            }
+            else
+            {
+                if(this.slabSlot == SLAB_SLOT_NOT_ALLOCATED)
+                {
+                    // if not in SLAB already, then add to SLAB
+                    this.slabSlot = slab.acquire(streamId);
+                    MutableDirectBuffer slabBuffer = slab.buffer(slabSlot);
+                    slabBuffer.putBytes(0, buffer, offset, limit);
+                    this.slabSlotLimit = limit - offset;
+                }
+                else
+                {
+                    this.slabSlotOffset = offset;
                 }
             }
 
-            if(nextOffset == limit && this.slabSlot != SLAB_SLOT_NOT_ALLOCATED)
+            if(offset == limit && this.slabSlot != SLAB_SLOT_NOT_ALLOCATED)
             {
                 slab.release(this.slabSlot);
                 this.slabSlotOffset = 0;
                 this.slabSlot = SLAB_SLOT_NOT_ALLOCATED;
             }
-
-            return bytesWritten;
         }
 
         private void decodeText(

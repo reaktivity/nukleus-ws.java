@@ -137,7 +137,7 @@ public final class SourceOutputStreamFactory
                 dataRO.wrap(buffer, index, index + length);
                 final long streamId = dataRO.streamId();
 
-                source.doWindow(streamId, length);
+                source.doWindow(streamId, length, 1);
             }
             else if (msgTypeId == EndFW.TYPE_ID)
             {

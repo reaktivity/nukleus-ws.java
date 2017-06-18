@@ -40,8 +40,6 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WsDataExFW;
 
 public final class TargetOutputEstablishedStreamFactory
 {
-    private static final int ENCODE_OVERHEAD_MAXIMUM = 14;
-
     private final FrameFW frameRO = new FrameFW();
 
     private final BeginFW beginRO = new BeginFW();
@@ -84,6 +82,11 @@ public final class TargetOutputEstablishedStreamFactory
 
         private Target target;
         private long targetId;
+
+        private int targetWindowBytes;
+        private int targetWindowFrames;
+        private int targetWindowBytesAdjustment;
+        private int targetWindowFramesAdjustment;
 
         private TargetOutputEstablishedStream()
         {
@@ -155,7 +158,7 @@ public final class TargetOutputEstablishedStreamFactory
                 dataRO.wrap(buffer, index, index + length);
                 final long streamId = dataRO.streamId();
 
-                source.doWindow(streamId, length);
+                source.doWindow(streamId, length, 1);
             }
             else if (msgTypeId == EndFW.TYPE_ID)
             {
@@ -189,7 +192,7 @@ public final class TargetOutputEstablishedStreamFactory
         {
             final BeginFW begin = beginRO.wrap(buffer, index, index + length);
 
-            final long newSourceId = begin.streamId();
+            final long sourceId = begin.streamId();
             final long sourceRef = begin.sourceRef();
             final long targetCorrelationId = begin.correlationId();
 
@@ -206,7 +209,7 @@ public final class TargetOutputEstablishedStreamFactory
                 newTarget.doHttpBegin(newTargetId, 0L, sourceCorrelationId, setHttpHeaders(sourceHash, protocol));
                 newTarget.addThrottle(newTargetId, this::handleThrottle);
 
-                this.sourceId = newSourceId;
+                this.sourceId = sourceId;
                 this.target = newTarget;
                 this.targetId = newTargetId;
 
@@ -223,17 +226,40 @@ public final class TargetOutputEstablishedStreamFactory
             int index,
             int length)
         {
-            dataRO.wrap(buffer, index, index + length);
+            final DataFW data = dataRO.wrap(buffer, index, index + length);
 
-            int flags = 0x82;
-            final OctetsFW extension = dataRO.extension();
-            if (extension.sizeof() > 0)
+            targetWindowBytes -= data.length();
+            targetWindowFrames--;
+
+            if (targetWindowBytes < 0 || targetWindowFrames < 0)
             {
-                final WsDataExFW wsDataEx = extension.get(wsDataExRO::wrap);
-                flags = wsDataEx.flags();
+                processUnexpected(buffer, index, length);
             }
+            else
+            {
+                if (targetWindowBytes == 0 || targetWindowFrames == 0)
+                {
+                    source.doWindow(sourceId, 0, 0);
+                }
 
-            target.doHttpData(targetId, dataRO.payload(), flags);
+                final OctetsFW payload = data.payload();
+                final OctetsFW extension = data.extension();
+
+                int flags = 0x82;
+                if (extension.sizeof() > 0)
+                {
+                    final WsDataExFW wsDataEx = extension.get(wsDataExRO::wrap);
+                    flags = wsDataEx.flags();
+                }
+
+                final int wsHeaderSize = target.doHttpData(targetId, payload, flags);
+
+                targetWindowBytesAdjustment -= wsHeaderSize;
+                if (payload.sizeof() + wsHeaderSize > Target.MAXIMUM_DATA_LENGTH)
+                {
+                    targetWindowFramesAdjustment--;
+                }
+            }
         }
 
         private void processEnd(
@@ -303,13 +329,23 @@ public final class TargetOutputEstablishedStreamFactory
             int index,
             int length)
         {
-            windowRO.wrap(buffer, index, index + length);
+            final WindowFW window = windowRO.wrap(buffer, index, index + length);
 
-            final int httpUpdate = windowRO.update();
-            final int wsUpdate = httpUpdate - ENCODE_OVERHEAD_MAXIMUM;
-            if (wsUpdate > 0)
+            final int sourceWindowBytesDelta = window.update();
+            final int sourceWindowFramesDelta = window.frames();
+
+            final int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
+            final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
+
+            targetWindowBytes += Math.max(targetWindowBytesDelta, 0);
+            targetWindowBytesAdjustment = Math.abs(Math.min(targetWindowBytesDelta, 0));
+
+            targetWindowFrames += Math.max(targetWindowFramesDelta, 0);
+            targetWindowFramesAdjustment = Math.abs(Math.min(targetWindowFramesDelta, 0));
+
+            if (targetWindowBytesDelta > 0 || targetWindowFramesDelta > 0)
             {
-                source.doWindow(sourceId, wsUpdate);
+                source.doWindow(sourceId, targetWindowBytesDelta, Math.max(targetWindowFramesDelta, 0));
             }
         }
 

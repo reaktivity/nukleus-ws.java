@@ -16,8 +16,6 @@
 package org.reaktivity.nukleus.ws.internal.routable;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.agrona.BitUtil.SIZE_OF_BYTE;
-import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.reaktivity.nukleus.ws.internal.util.BufferUtil.xor;
 
 import java.util.function.Consumer;
@@ -48,11 +46,13 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WsHeaderFW;
 
 public final class Target implements Nukleus
 {
+    public static final int MAXIMUM_DATA_LENGTH = (1 << Short.SIZE) - 1;
+
     private static final DirectBuffer SOURCE_NAME_BUFFER = new UnsafeBuffer(WsNukleus.NAME.getBytes(UTF_8));
 
     private final FrameFW frameRO = new FrameFW();
 
-    private final WsHeaderFW.Builder wsFrameRW = new WsHeaderFW.Builder();
+    private final WsHeaderFW.Builder wsHeaderRW = new WsHeaderFW.Builder();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
@@ -202,30 +202,25 @@ public final class Target implements Nukleus
         streamsBuffer.write(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
     }
 
-    public void doHttpData(
+    public int doHttpData(
         long targetId,
         OctetsFW payload,
         int flagsAndOpcode)
     {
         final int payloadSize = payload.sizeof();
 
-        WsHeaderFW wsHeader = wsFrameRW.wrap(writeBuffer, SIZE_OF_LONG + SIZE_OF_BYTE, writeBuffer.capacity())
+        WsHeaderFW wsHeader = wsHeaderRW.wrap(writeBuffer, DataFW.FIELD_OFFSET_PAYLOAD, writeBuffer.capacity())
                 .length(payloadSize)
                 .flagsAndOpcode(flagsAndOpcode)
                 .build();
 
         final int wsHeaderSize = wsHeader.sizeof();
-        final int payloadFragmentSize = Math.min((1 << Short.SIZE) - 1 - wsHeaderSize,  payloadSize);
+        final int payloadFragmentSize = Math.min(MAXIMUM_DATA_LENGTH - wsHeaderSize,  payloadSize);
 
         DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .payload(p -> p.set((b, o, m) ->
-                {
-                    b.putBytes(o, wsHeader.buffer(), wsHeader.offset(), wsHeaderSize);
-                    b.putBytes(o + wsHeaderSize, payload.buffer(), payload.offset(), payloadFragmentSize);
-                    return wsHeaderSize + payloadFragmentSize;
-                }))
-                .extension(e -> e.reset())
+                .payload(p -> p.set((b, o, m) -> wsHeaderSize)
+                               .put(payload.buffer(), payload.offset(), payloadFragmentSize))
                 .build();
 
         streamsBuffer.write(data.typeId(), data.buffer(), data.offset(), data.sizeof());
@@ -235,16 +230,13 @@ public final class Target implements Nukleus
         {
             DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .payload(p -> p.set((b, o, m) ->
-                {
-                    b.putBytes(o, payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining);
-                    return payloadRemaining;
-                }))
-                .extension(e -> e.reset())
+                .payload(p -> p.set(payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining))
                 .build();
 
             streamsBuffer.write(data2.typeId(), data2.buffer(), data2.offset(), data2.sizeof());
         }
+
+        return wsHeaderSize;
     }
 
     public void doHttpEnd(

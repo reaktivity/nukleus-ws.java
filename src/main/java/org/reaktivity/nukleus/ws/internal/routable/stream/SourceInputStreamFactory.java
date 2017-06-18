@@ -15,7 +15,6 @@
  */
 package org.reaktivity.nukleus.ws.internal.routable.stream;
 
-import static java.lang.Integer.highestOneBit;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.agrona.BitUtil.SIZE_OF_SHORT;
@@ -58,10 +57,6 @@ public final class SourceInputStreamFactory
 {
     private static final byte[] HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(UTF_8);
     private static final String WEBSOCKET_VERSION_13 = "13";
-
-    private static final int HEADER_SIZE_PAYLOAD_8_WITH_MASKING_KEY = 1 + 1 + 4;
-    private static final int HEADER_SIZE_EXTENDED_PAYLOAD_16_WITH_MASKING_KEY = HEADER_SIZE_PAYLOAD_8_WITH_MASKING_KEY + 2;
-    private static final int HEADER_SIZE_EXTENDED_PAYLOAD_64_WITH_MASKING_KEY = HEADER_SIZE_PAYLOAD_8_WITH_MASKING_KEY + 8;
 
     private static final int SLAB_SLOT_NOT_ALLOCATED = -1;
 
@@ -123,6 +118,11 @@ public final class SourceInputStreamFactory
         private int payloadProgress;
         private int payloadLength;
         private int maskingKey;
+
+        private int sourceWindowBytes;
+        private int sourceWindowFrames;
+        private int sourceWindowBytesAdjustment;
+        private int sourceWindowFramesAdjustment;
 
         private SourceInputStream()
         {
@@ -195,7 +195,7 @@ public final class SourceInputStreamFactory
                 dataRO.wrap(buffer, index, index + length);
                 final long streamId = dataRO.streamId();
 
-                source.doWindow(streamId, length);
+                source.doWindow(streamId, length, 1);
             }
             else if (msgTypeId == EndFW.TYPE_ID)
             {
@@ -331,17 +331,32 @@ public final class SourceInputStreamFactory
         {
             final DataFW data = dataRO.wrap(buffer, index, index + length);
 
-            OctetsFW payload = data.payload();
-            if(this.slabSlotLimit != 0)
-            {
-                MutableDirectBuffer slabBuffer = slab.buffer(this.slabSlot, this.slabSlotOffset);
-                slabBuffer.putBytes(this.slabSlotLimit, payload.buffer(), payload.offset(), payload.sizeof());
-                this.slabSlotLimit += data.length();
-                payload = octetsRO.wrap(slabBuffer, 0, slabSlotLimit);
-            }
+            sourceWindowBytes -= data.length();
+            sourceWindowFrames--;
 
-            long streamId = data.streamId();
-            decodeState.accept(streamId, payload);
+            if (sourceWindowBytes < 0 || sourceWindowFrames < 0)
+            {
+                processUnexpected(buffer, index, length);
+            }
+            else
+            {
+                if (sourceWindowBytes == 0 || sourceWindowFrames == 0)
+                {
+                    source.doWindow(sourceId, 0, 0);
+                }
+
+                OctetsFW payload = data.payload();
+                if(this.slabSlotLimit != 0)
+                {
+                    MutableDirectBuffer slabBuffer = slab.buffer(this.slabSlot, this.slabSlotOffset);
+                    slabBuffer.putBytes(this.slabSlotLimit, payload.buffer(), payload.offset(), payload.sizeof());
+                    this.slabSlotLimit += data.length();
+                    payload = octetsRO.wrap(slabBuffer, 0, slabSlotLimit);
+                }
+
+                long streamId = data.streamId();
+                decodeState.accept(streamId, payload);
+            }
         }
 
         private void processEnd(
@@ -392,6 +407,8 @@ public final class SourceInputStreamFactory
                         throw new IllegalStateException("not yet implemented");
                     }
 
+                    sourceWindowBytesAdjustment += wsHeader.sizeof();
+
                     httpPayload.wrap(httpPayload.buffer(), httpPayload.offset() + wsHeader.sizeof(), httpPayload.limit());
                     this.decodeState.accept(streamId, httpPayload);
                 }
@@ -430,23 +447,31 @@ public final class SourceInputStreamFactory
         {
             // TODO canWrap for UTF-8 split multi-byte characters
             final int payloadSize = payload.sizeof();
-            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
 
-            payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
-            target.doWsData(targetId, 0x81, maskingKey, payload);
-
-            payloadProgress += decodeBytes;
-            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
-
-            if (payloadProgress == payloadLength)
+            if (payloadSize > 0)
             {
-                this.decodeState = this::decodeHeader;
-            }
+                // TODO: limit target bytes by target window, or RESET on overflow?
 
-            if (payloadSize > payload.sizeof())
-            {
-                payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
-                this.decodeState.accept(streamId, payload);
+                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+                target.doWsData(targetId, 0x81, maskingKey, payload);
+
+                payloadProgress += decodeBytes;
+                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                if (payloadSize > payload.sizeof())
+                {
+                    sourceWindowFramesAdjustment--;
+
+                    payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
+                    this.decodeState.accept(streamId, payload);
+                }
             }
         }
 
@@ -457,6 +482,8 @@ public final class SourceInputStreamFactory
             final int payloadSize = payload.sizeof();
             if (payloadSize > 0)
             {
+                // TODO: limit target bytes by target window, or RESET on overflow?
+
                 final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
 
                 payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
@@ -472,6 +499,8 @@ public final class SourceInputStreamFactory
 
                 if (payloadSize > payload.sizeof())
                 {
+                    sourceWindowFramesAdjustment--;
+
                     payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
                     this.decodeState.accept(streamId, payload);
                 }
@@ -539,11 +568,24 @@ public final class SourceInputStreamFactory
             int index,
             int length)
         {
-            windowRO.wrap(buffer, index, index + length);
+            final WindowFW window = windowRO.wrap(buffer, index, index + length);
 
-            final int update = windowRO.update();
+            final int targetWindowBytesDelta = window.update();
+            final int targetWindowFramesDelta = window.frames();
 
-            source.doWindow(sourceId, update - headerSize(update));
+            final int sourceWindowBytesDelta = targetWindowBytesDelta + sourceWindowBytesAdjustment;
+            final int sourceWindowFramesDelta = targetWindowFramesDelta + sourceWindowFramesAdjustment;
+
+            sourceWindowBytes += Math.max(sourceWindowBytesDelta, 0);
+            sourceWindowBytesAdjustment = Math.abs(Math.min(sourceWindowBytesDelta, 0));
+
+            sourceWindowFrames += Math.max(sourceWindowFramesDelta, 0);
+            sourceWindowFramesAdjustment = Math.abs(Math.min(sourceWindowFramesDelta, 0));
+
+            if (sourceWindowBytesDelta > 0 || sourceWindowFramesDelta > 0)
+            {
+                source.doWindow(sourceId, sourceWindowBytesDelta, Math.max(sourceWindowFramesDelta, 0));
+            }
         }
 
         private void processReset(
@@ -554,41 +596,6 @@ public final class SourceInputStreamFactory
             resetRO.wrap(buffer, index, index + length);
 
             source.doReset(sourceId);
-        }
-    }
-
-    private static int headerSize(
-        int payloadSize)
-    {
-        switch (highestOneBit(payloadSize))
-        {
-        case 0:
-        case 1:
-        case 2:
-        case 4:
-        case 8:
-        case 16:
-        case 32:
-            return HEADER_SIZE_PAYLOAD_8_WITH_MASKING_KEY;
-        case 64:
-            return headerSize64to127(payloadSize);
-        case 128:
-            return HEADER_SIZE_EXTENDED_PAYLOAD_16_WITH_MASKING_KEY;
-        default:
-            return HEADER_SIZE_EXTENDED_PAYLOAD_64_WITH_MASKING_KEY;
-        }
-    }
-
-    private static int headerSize64to127(
-        int payloadSize)
-    {
-        switch (payloadSize)
-        {
-        case 126:
-        case 127:
-            return HEADER_SIZE_EXTENDED_PAYLOAD_16_WITH_MASKING_KEY;
-        default:
-            return HEADER_SIZE_PAYLOAD_8_WITH_MASKING_KEY;
         }
     }
 

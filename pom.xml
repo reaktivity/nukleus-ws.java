@@ -64,6 +64,7 @@
       <groupId>org.reaktivity</groupId>
       <artifactId>nukleus-ws.spec</artifactId>
       <version>${nukleus.ws.spec.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.reaktivity</groupId>
@@ -349,4 +350,3 @@
   </profiles>
 
 </project>
-

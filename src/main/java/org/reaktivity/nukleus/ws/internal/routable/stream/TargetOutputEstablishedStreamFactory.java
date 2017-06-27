@@ -88,6 +88,8 @@ public final class TargetOutputEstablishedStreamFactory
         private int targetWindowBytesAdjustment;
         private int targetWindowFramesAdjustment;
 
+        private Consumer<WindowFW> windowHandler;
+
         private TargetOutputEstablishedStream()
         {
             this.streamState = this::beforeBegin;
@@ -214,6 +216,7 @@ public final class TargetOutputEstablishedStreamFactory
                 this.targetId = newTargetId;
 
                 this.streamState = this::afterBeginOrData;
+                this.windowHandler = this::processInitialWindow;
             }
             else
             {
@@ -313,7 +316,8 @@ public final class TargetOutputEstablishedStreamFactory
             switch (msgTypeId)
             {
             case WindowFW.TYPE_ID:
-                processWindow(buffer, index, length);
+                final WindowFW window = windowRO.wrap(buffer, index, index + length);
+                this.windowHandler.accept(window);
                 break;
             case ResetFW.TYPE_ID:
                 processReset(buffer, index, length);
@@ -324,13 +328,18 @@ public final class TargetOutputEstablishedStreamFactory
             }
         }
 
-        private void processWindow(
-            DirectBuffer buffer,
-            int index,
-            int length)
+        public void processInitialWindow(WindowFW window)
         {
-            final WindowFW window = windowRO.wrap(buffer, index, index + length);
+            final int sourceWindowBytesDelta = window.update();
 
+            targetWindowBytesAdjustment -= sourceWindowBytesDelta * 20 / 100;
+
+            this.windowHandler = this::processWindow;
+            this.windowHandler.accept(window);
+        }
+
+        private void processWindow(WindowFW window)
+        {
             final int sourceWindowBytesDelta = window.update();
             final int sourceWindowFramesDelta = window.frames();
 

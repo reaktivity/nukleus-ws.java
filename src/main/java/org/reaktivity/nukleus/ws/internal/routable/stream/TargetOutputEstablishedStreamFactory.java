@@ -88,7 +88,7 @@ public final class TargetOutputEstablishedStreamFactory
         private int targetWindowBytesAdjustment;
         private int targetWindowFramesAdjustment;
 
-        private boolean applyInitialWindowAdjustment;
+        private Consumer<WindowFW> windowHandler;
 
         private TargetOutputEstablishedStream()
         {
@@ -216,7 +216,7 @@ public final class TargetOutputEstablishedStreamFactory
                 this.targetId = newTargetId;
 
                 this.streamState = this::afterBeginOrData;
-                this.applyInitialWindowAdjustment = true;
+                this.windowHandler = this::processInitialWindow;
             }
             else
             {
@@ -316,7 +316,8 @@ public final class TargetOutputEstablishedStreamFactory
             switch (msgTypeId)
             {
             case WindowFW.TYPE_ID:
-                processWindow(buffer, index, length);
+                final WindowFW window = windowRO.wrap(buffer, index, index + length);
+                this.windowHandler.accept(window);
                 break;
             case ResetFW.TYPE_ID:
                 processReset(buffer, index, length);
@@ -327,22 +328,34 @@ public final class TargetOutputEstablishedStreamFactory
             }
         }
 
-        private void processWindow(
-            DirectBuffer buffer,
-            int index,
-            int length)
+        public void processInitialWindow(WindowFW window)
         {
-            final WindowFW window = windowRO.wrap(buffer, index, index + length);
-
             final int sourceWindowBytesDelta = window.update();
             final int sourceWindowFramesDelta = window.frames();
 
             int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
-            if (applyInitialWindowAdjustment)
+            final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
+
+            targetWindowBytes += Math.max(targetWindowBytesDelta, 0);
+            targetWindowBytesAdjustment = Math.abs(Math.min(targetWindowBytesDelta, 0));
+            targetWindowBytesAdjustment -= sourceWindowBytesDelta * 20 / 100;
+
+            targetWindowFrames += Math.max(targetWindowFramesDelta, 0);
+            targetWindowFramesAdjustment = Math.abs(Math.min(targetWindowFramesDelta, 0));
+
+            if (targetWindowBytesDelta > 0 || targetWindowFramesDelta > 0)
             {
-                targetWindowBytesDelta = (int) Math.round((targetWindowBytesDelta * .80));
-                applyInitialWindowAdjustment = false;
+                source.doWindow(sourceId, targetWindowBytesDelta, Math.max(targetWindowFramesDelta, 0));
+                this.windowHandler = this::processWindow;
             }
+        }
+
+        private void processWindow(WindowFW window)
+        {
+            final int sourceWindowBytesDelta = window.update();
+            final int sourceWindowFramesDelta = window.frames();
+
+            int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
             final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
 
             targetWindowBytes += Math.max(targetWindowBytesDelta, 0);

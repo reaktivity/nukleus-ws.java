@@ -333,7 +333,7 @@ public final class TargetOutputEstablishedStreamFactory
             final int sourceWindowBytesDelta = window.update();
             final int sourceWindowFramesDelta = window.frames();
 
-            int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
+            final int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
             final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
 
             targetWindowBytes += Math.max(targetWindowBytesDelta, 0);
@@ -355,7 +355,7 @@ public final class TargetOutputEstablishedStreamFactory
             final int sourceWindowBytesDelta = window.update();
             final int sourceWindowFramesDelta = window.frames();
 
-            int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
+            final int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
             final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
 
             targetWindowBytes += Math.max(targetWindowBytesDelta, 0);

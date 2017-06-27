@@ -331,23 +331,11 @@ public final class TargetOutputEstablishedStreamFactory
         public void processInitialWindow(WindowFW window)
         {
             final int sourceWindowBytesDelta = window.update();
-            final int sourceWindowFramesDelta = window.frames();
 
-            final int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
-            final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
-
-            targetWindowBytes += Math.max(targetWindowBytesDelta, 0);
-            targetWindowBytesAdjustment = Math.abs(Math.min(targetWindowBytesDelta, 0));
             targetWindowBytesAdjustment -= sourceWindowBytesDelta * 20 / 100;
 
-            targetWindowFrames += Math.max(targetWindowFramesDelta, 0);
-            targetWindowFramesAdjustment = Math.abs(Math.min(targetWindowFramesDelta, 0));
-
-            if (targetWindowBytesDelta > 0 || targetWindowFramesDelta > 0)
-            {
-                source.doWindow(sourceId, targetWindowBytesDelta, Math.max(targetWindowFramesDelta, 0));
-                this.windowHandler = this::processWindow;
-            }
+            this.windowHandler = this::processWindow;
+            this.windowHandler.accept(window);
         }
 
         private void processWindow(WindowFW window)

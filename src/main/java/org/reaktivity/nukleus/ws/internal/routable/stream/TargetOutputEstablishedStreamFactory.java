@@ -88,6 +88,8 @@ public final class TargetOutputEstablishedStreamFactory
         private int targetWindowBytesAdjustment;
         private int targetWindowFramesAdjustment;
 
+        private boolean applyInitialWindowAdjustment;
+
         private TargetOutputEstablishedStream()
         {
             this.streamState = this::beforeBegin;
@@ -214,6 +216,7 @@ public final class TargetOutputEstablishedStreamFactory
                 this.targetId = newTargetId;
 
                 this.streamState = this::afterBeginOrData;
+                this.applyInitialWindowAdjustment = true;
             }
             else
             {
@@ -334,7 +337,12 @@ public final class TargetOutputEstablishedStreamFactory
             final int sourceWindowBytesDelta = window.update();
             final int sourceWindowFramesDelta = window.frames();
 
-            final int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
+            int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
+            if (applyInitialWindowAdjustment)
+            {
+                targetWindowBytesDelta = (int) Math.round((targetWindowBytesDelta * .80));
+                applyInitialWindowAdjustment = false;
+            }
             final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
 
             targetWindowBytes += Math.max(targetWindowBytesDelta, 0);

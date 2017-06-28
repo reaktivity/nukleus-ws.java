@@ -347,14 +347,14 @@ public final class TargetOutputEstablishedStreamFactory
             final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
 
             targetWindowBytes += Math.max(targetWindowBytesDelta, 0);
-            targetWindowBytesAdjustment = Math.abs(Math.min(targetWindowBytesDelta, 0));
+            targetWindowBytesAdjustment = Math.min(targetWindowBytesDelta, 0);
 
             targetWindowFrames += Math.max(targetWindowFramesDelta, 0);
-            targetWindowFramesAdjustment = Math.abs(Math.min(targetWindowFramesDelta, 0));
+            targetWindowFramesAdjustment = Math.min(targetWindowFramesDelta, 0);
 
             if (targetWindowBytesDelta > 0 || targetWindowFramesDelta > 0)
             {
-                source.doWindow(sourceId, targetWindowBytesDelta, Math.max(targetWindowFramesDelta, 0));
+                source.doWindow(sourceId, Math.max(targetWindowBytesDelta, 0), Math.max(targetWindowFramesDelta, 0));
             }
         }
 

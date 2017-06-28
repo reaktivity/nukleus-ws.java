@@ -577,14 +577,14 @@ public final class SourceInputStreamFactory
             final int sourceWindowFramesDelta = targetWindowFramesDelta + sourceWindowFramesAdjustment;
 
             sourceWindowBytes += Math.max(sourceWindowBytesDelta, 0);
-            sourceWindowBytesAdjustment = Math.abs(Math.min(sourceWindowBytesDelta, 0));
+            sourceWindowBytesAdjustment = Math.min(sourceWindowBytesDelta, 0);
 
             sourceWindowFrames += Math.max(sourceWindowFramesDelta, 0);
-            sourceWindowFramesAdjustment = Math.abs(Math.min(sourceWindowFramesDelta, 0));
+            sourceWindowFramesAdjustment = Math.min(sourceWindowFramesDelta, 0);
 
             if (sourceWindowBytesDelta > 0 || sourceWindowFramesDelta > 0)
             {
-                source.doWindow(sourceId, sourceWindowBytesDelta, Math.max(sourceWindowFramesDelta, 0));
+                source.doWindow(sourceId, Math.max(sourceWindowBytesDelta, 0), Math.max(sourceWindowFramesDelta, 0));
             }
         }
 

@@ -486,6 +486,7 @@ public final class SourceInputStreamFactory
 
                 final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
 
+                final int payloadLimit = payload.limit();
                 payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
                 target.doWsData(targetId, 0x82, maskingKey, payload);
 
@@ -497,11 +498,11 @@ public final class SourceInputStreamFactory
                     this.decodeState = this::decodeHeader;
                 }
 
-                if (payloadSize > payload.sizeof())
+                if (payloadLimit > payload.limit())
                 {
                     sourceWindowFramesAdjustment--;
 
-                    payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
+                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
                     this.decodeState.accept(streamId, payload);
                 }
             }

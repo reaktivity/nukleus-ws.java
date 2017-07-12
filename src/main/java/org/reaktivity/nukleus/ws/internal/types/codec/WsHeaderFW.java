@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal.types.stream;
+package org.reaktivity.nukleus.ws.internal.types.codec;
 
 import static java.lang.Integer.highestOneBit;
 

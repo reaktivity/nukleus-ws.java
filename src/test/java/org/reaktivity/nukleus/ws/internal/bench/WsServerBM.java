@@ -15,10 +15,7 @@
  */
 package org.reaktivity.nukleus.ws.internal.bench;
 
-import static java.nio.ByteBuffer.allocateDirect;
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.agrona.BitUtil.SIZE_OF_INT;
-import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.reaktivity.nukleus.Configuration.DIRECTORY_PROPERTY_NAME;
 import static org.reaktivity.nukleus.Configuration.STREAMS_BUFFER_CAPACITY_PROPERTY_NAME;
 
@@ -26,10 +23,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 import java.util.Random;
 import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 
+import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
-import org.agrona.concurrent.AtomicBuffer;
-import org.agrona.concurrent.MessageHandler;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -51,8 +48,9 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.reaktivity.nukleus.Configuration;
+import org.reaktivity.nukleus.function.MessageConsumer;
+import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.ws.internal.WsController;
-import org.reaktivity.nukleus.ws.internal.WsStreams;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.ListFW;
@@ -98,87 +96,32 @@ public class WsServerBM
 
     private final HttpBeginExFW.Builder httpBeginExRW = new HttpBeginExFW.Builder();
 
-    private WsStreams sourceInputStreams;
-    private WsStreams sourceOutputEstStreams;
+    private Source source;
+    private Target target;
 
-    private MutableDirectBuffer throttleBuffer;
-
-    private long sourceInputRef;
-    private long targetInputRef;
-
-    private long sourceInputId;
-    private DataFW data;
-
-    private MessageHandler sourceOutputEstHandler;
+    private long sourceRef;
+    private long targetRef;
 
     @Setup(Level.Trial)
     public void reinit() throws Exception
     {
-        final Random random = new Random();
         final WsController controller = reaktor.controller(WsController.class);
 
-        this.targetInputRef = random.nextLong();
-        this.sourceInputRef = controller.routeServer("source", 0L, "target", targetInputRef, null).get();
+        final Random random = new Random();
 
-        this.sourceInputStreams = controller.streams("source");
-        this.sourceOutputEstStreams = controller.streams("ws", "target");
+        this.targetRef = random.nextLong();
+        this.sourceRef = controller.routeServer("source", 0L, "target", targetRef, null).get();
 
-        this.sourceInputId = random.nextLong();
-        this.sourceOutputEstHandler = this::processBegin;
+        this.source = controller.supplySource("source", Source::new);
+        this.target = controller.supplyTarget("target", Target::new);
 
-        final Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers = hs ->
-        {
-            hs.item(h -> h.name(":scheme").value("http"));
-            hs.item(h -> h.name(":method").value("GET"));
-            hs.item(h -> h.name(":path").value("/"));
-            hs.item(h -> h.name("host").value("localhost:8080"));
-            hs.item(h -> h.name("upgrade").value("websocket"));
-            hs.item(h -> h.name("sec-websocket-key").value("dGhlIHNhbXBsZSBub25jZQ=="));
-            hs.item(h -> h.name("sec-websocket-version").value("13"));
+        final long sourceId = random.nextLong();
+        final long correlationId = random.nextLong();
 
-//            hs.item(h -> h.name("sec-websocket-protocol").value(protocol));
-        };
+        source.reinit(sourceRef, sourceId, correlationId);
+        target.reinit();
 
-        final AtomicBuffer writeBuffer = new UnsafeBuffer(new byte[256]);
-
-        BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .streamId(sourceInputId)
-                .sourceRef(sourceInputRef)
-                .correlationId(random.nextLong())
-                .extension(e -> e.set(visitHttpBeginEx(headers)))
-                .build();
-
-        this.sourceInputStreams.writeStreams(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
-
-        byte[] charBytes = "Hello, world".getBytes(StandardCharsets.UTF_8);
-
-        byte[] sendArray = new byte[18];
-        sendArray[0] = (byte) 0x82; // fin, binary
-        sendArray[1] = (byte) 0x8c; // masked, length 12
-        sendArray[2] = (byte) 0x01; // masking key (4 bytes)
-        sendArray[3] = (byte) 0x02;
-        sendArray[4] = (byte) 0x03;
-        sendArray[5] = (byte) 0x04;
-        sendArray[6] = (byte) (charBytes[0] ^ sendArray[2]);
-        sendArray[7] = (byte) (charBytes[1] ^ sendArray[3]);
-        sendArray[8] = (byte) (charBytes[2] ^ sendArray[4]);
-        sendArray[9] = (byte) (charBytes[3] ^ sendArray[5]);
-        sendArray[10] = (byte) (charBytes[4] ^ sendArray[2]);
-        sendArray[11] = (byte) (charBytes[5] ^ sendArray[3]);
-        sendArray[12] = (byte) (charBytes[6] ^ sendArray[4]);
-        sendArray[13] = (byte) (charBytes[7] ^ sendArray[5]);
-        sendArray[14] = (byte) (charBytes[8] ^ sendArray[2]);
-        sendArray[15] = (byte) (charBytes[9] ^ sendArray[3]);
-        sendArray[16] = (byte) (charBytes[10] ^ sendArray[4]);
-        sendArray[17] = (byte) (charBytes[11] ^ sendArray[5]);
-
-        this.data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                          .streamId(sourceInputId)
-                          .payload(p -> p.set(sendArray))
-                          .extension(e -> e.reset())
-                          .build();
-
-        this.throttleBuffer = new UnsafeBuffer(allocateDirect(SIZE_OF_LONG + SIZE_OF_INT));
+        source.doBegin();
     }
 
     @TearDown(Level.Trial)
@@ -186,13 +129,10 @@ public class WsServerBM
     {
         WsController controller = reaktor.controller(WsController.class);
 
-        controller.unrouteServer("source", sourceInputRef, "target", targetInputRef, null).get();
+        controller.unrouteServer("source", sourceRef, "target", targetRef, null).get();
 
-        this.sourceInputStreams.close();
-        this.sourceInputStreams = null;
-
-        this.sourceOutputEstStreams.close();
-        this.sourceOutputEstStreams = null;
+        this.source = null;
+        this.target = null;
     }
 
     @Benchmark
@@ -201,13 +141,7 @@ public class WsServerBM
     public void writer(Control control) throws Exception
     {
         while (!control.stopMeasurement &&
-               !sourceInputStreams.writeStreams(data.typeId(), data.buffer(), 0, data.limit()))
-        {
-            Thread.yield();
-        }
-
-        while (!control.stopMeasurement &&
-                sourceInputStreams.readThrottle((t, b, o, l) -> {}) == 0)
+               source.process() == 0)
         {
             Thread.yield();
         }
@@ -219,68 +153,180 @@ public class WsServerBM
     public void reader(Control control) throws Exception
     {
         while (!control.stopMeasurement &&
-               sourceOutputEstStreams.readStreams(this::handleReply) == 0)
+               target.read() == 0)
         {
             Thread.yield();
         }
     }
 
-    private void handleReply(
-        int msgTypeId,
-        MutableDirectBuffer buffer,
-        int index,
-        int length)
+    private final class Source
     {
-        sourceOutputEstHandler.onMessage(msgTypeId, buffer, index, length);
+        private final MessagePredicate streams;
+        private final ToIntFunction<MessageConsumer> throttle;
+
+        private BeginFW begin;
+        private DataFW data;
+
+        private Source(
+            MessagePredicate streams,
+            ToIntFunction<MessageConsumer> throttle)
+        {
+            this.streams = streams;
+            this.throttle = throttle;
+        }
+
+        private void reinit(
+            long sourceRef,
+            long sourceId,
+            long correlationId)
+        {
+            final MutableDirectBuffer writeBuffer = new UnsafeBuffer(new byte[256]);
+
+            final Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers = hs ->
+            {
+                hs.item(h -> h.name(":scheme").value("http"));
+                hs.item(h -> h.name(":method").value("GET"));
+                hs.item(h -> h.name(":path").value("/"));
+                hs.item(h -> h.name("host").value("localhost:8080"));
+                hs.item(h -> h.name("upgrade").value("websocket"));
+                hs.item(h -> h.name("sec-websocket-key").value("dGhlIHNhbXBsZSBub25jZQ=="));
+                hs.item(h -> h.name("sec-websocket-version").value("13"));
+
+//                hs.item(h -> h.name("sec-websocket-protocol").value(protocol));
+            };
+
+            // TODO: move to doBegin to avoid writeBuffer overwrite with DataFW
+            this.begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .streamId(sourceId)
+                    .sourceRef(sourceRef)
+                    .correlationId(correlationId)
+                    .extension(e -> e.set(visitHttpBeginEx(headers)))
+                    .build();
+
+            byte[] charBytes = "Hello, world".getBytes(StandardCharsets.UTF_8);
+
+            byte[] sendArray = new byte[18];
+            sendArray[0] = (byte) 0x82; // fin, binary
+            sendArray[1] = (byte) 0x8c; // masked, length 12
+            sendArray[2] = (byte) 0x01; // masking key (4 bytes)
+            sendArray[3] = (byte) 0x02;
+            sendArray[4] = (byte) 0x03;
+            sendArray[5] = (byte) 0x04;
+            sendArray[6] = (byte) (charBytes[0] ^ sendArray[2]);
+            sendArray[7] = (byte) (charBytes[1] ^ sendArray[3]);
+            sendArray[8] = (byte) (charBytes[2] ^ sendArray[4]);
+            sendArray[9] = (byte) (charBytes[3] ^ sendArray[5]);
+            sendArray[10] = (byte) (charBytes[4] ^ sendArray[2]);
+            sendArray[11] = (byte) (charBytes[5] ^ sendArray[3]);
+            sendArray[12] = (byte) (charBytes[6] ^ sendArray[4]);
+            sendArray[13] = (byte) (charBytes[7] ^ sendArray[5]);
+            sendArray[14] = (byte) (charBytes[8] ^ sendArray[2]);
+            sendArray[15] = (byte) (charBytes[9] ^ sendArray[3]);
+            sendArray[16] = (byte) (charBytes[10] ^ sendArray[4]);
+            sendArray[17] = (byte) (charBytes[11] ^ sendArray[5]);
+
+            this.data = dataRW.wrap(writeBuffer, this.begin.limit(), writeBuffer.capacity())
+                              .streamId(sourceId)
+                              .payload(p -> p.set(sendArray))
+                              .extension(e -> e.reset())
+                              .build();
+        }
+
+        private boolean doBegin()
+        {
+            return streams.test(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
+        }
+
+        private int process()
+        {
+            int work = 0;
+
+            if (streams.test(data.typeId(), data.buffer(), data.offset(), data.sizeof()))
+            {
+                work++;
+            }
+
+            work += throttle.applyAsInt((t, b, i, l) -> {});
+
+            return work;
+        }
+
+        private Flyweight.Builder.Visitor visitHttpBeginEx(
+            Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
+        {
+            return (buffer, offset, limit) ->
+                httpBeginExRW.wrap(buffer, offset, limit)
+                             .headers(headers)
+                             .build()
+                             .sizeof();
+        }
     }
 
-    private void processBegin(
-        int msgTypeId,
-        MutableDirectBuffer buffer,
-        int index,
-        int length)
+    private final class Target
     {
-        beginRO.wrap(buffer, index, index + length);
-        final long streamId = beginRO.streamId();
-        doWindow(streamId, 8192);
+        private final ToIntFunction<MessageConsumer> streams;
+        private final MessagePredicate throttle;
 
-        this.sourceOutputEstHandler = this::processData;
-    }
+        private MutableDirectBuffer writeBuffer;
+        private MessageConsumer readHandler;
 
-    private void processData(
-        int msgTypeId,
-        MutableDirectBuffer buffer,
-        int index,
-        int length)
-    {
-        dataRO.wrap(buffer, index, index + length);
-        final long streamId = dataRO.streamId();
-        final OctetsFW payload = dataRO.payload();
+        private Target(
+            ToIntFunction<MessageConsumer> streams,
+            MessagePredicate throttle)
+        {
+            this.streams = streams;
+            this.throttle = throttle;
+        }
 
-        final int update = payload.sizeof();
-        doWindow(streamId, update);
-    }
+        private void reinit()
+        {
+            this.writeBuffer = new UnsafeBuffer(new byte[256]);
+            this.readHandler = this::beforeBegin;
+        }
 
-    private void doWindow(
-        final long streamId,
-        final int update)
-    {
-        final WindowFW window = windowRW.wrap(throttleBuffer, 0, throttleBuffer.capacity())
-                .streamId(streamId)
-                .update(update)
-                .build();
+        private int read()
+        {
+            return streams.applyAsInt(readHandler);
+        }
 
-        sourceOutputEstStreams.writeThrottle(window.typeId(), window.buffer(), window.offset(), window.sizeof());
-    }
+        private void beforeBegin(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            final BeginFW begin = beginRO.wrap(buffer, index, index + length);
+            final long streamId = begin.streamId();
+            doWindow(streamId, 8192);
 
-    private Flyweight.Builder.Visitor visitHttpBeginEx(
-        Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
-    {
-        return (buffer, offset, limit) ->
-            httpBeginExRW.wrap(buffer, offset, limit)
-                         .headers(headers)
-                         .build()
-                         .sizeof();
+            this.readHandler = this::afterBegin;
+        }
+
+        private void afterBegin(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            final DataFW data = dataRO.wrap(buffer, index, index + length);
+            final long streamId = data.streamId();
+            final OctetsFW payload = data.payload();
+
+            final int update = payload.sizeof();
+            doWindow(streamId, update);
+        }
+
+        private boolean doWindow(
+            final long streamId,
+            final int update)
+        {
+            final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .streamId(streamId)
+                    .update(update)
+                    .build();
+
+            return throttle.test(window.typeId(), window.buffer(), window.offset(), window.sizeof());
+        }
     }
 
     public static void main(String[] args) throws RunnerException

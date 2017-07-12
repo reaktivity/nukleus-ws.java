@@ -42,7 +42,7 @@ public class BaseFramingIT
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
-    private final ReaktorRule nukleus = new ReaktorRule()
+    private final ReaktorRule reaktor = new ReaktorRule()
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
@@ -51,7 +51,7 @@ public class BaseFramingIT
         .clean();
 
     @Rule
-    public final TestRule chain = outerRule(nukleus).around(k3po).around(timeout);
+    public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
     @Ignore("No way to read or write 0 length data frame at high level: reaktivity/k3po-nukleus-ext.java#11")

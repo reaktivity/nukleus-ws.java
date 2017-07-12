@@ -18,24 +18,20 @@ package org.reaktivity.nukleus.ws.internal;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
 
-import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
+import java.util.function.ToIntFunction;
 
-import org.agrona.DirectBuffer;
-import org.agrona.collections.Long2ObjectHashMap;
-import org.agrona.concurrent.AtomicBuffer;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.agrona.concurrent.broadcast.BroadcastReceiver;
-import org.agrona.concurrent.broadcast.CopyBroadcastReceiver;
-import org.agrona.concurrent.ringbuffer.RingBuffer;
 import org.reaktivity.nukleus.Controller;
+import org.reaktivity.nukleus.ControllerSpi;
+import org.reaktivity.nukleus.function.MessageConsumer;
+import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
-import org.reaktivity.nukleus.ws.internal.types.control.ErrorFW;
 import org.reaktivity.nukleus.ws.internal.types.control.Role;
 import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
-import org.reaktivity.nukleus.ws.internal.types.control.RoutedFW;
 import org.reaktivity.nukleus.ws.internal.types.control.UnrouteFW;
-import org.reaktivity.nukleus.ws.internal.types.control.UnroutedFW;
 import org.reaktivity.nukleus.ws.internal.types.control.WsRouteExFW;
 
 public final class WsController implements Controller
@@ -48,39 +44,26 @@ public final class WsController implements Controller
 
     private final WsRouteExFW.Builder routeExRW = new WsRouteExFW.Builder();
 
-    private final ErrorFW errorRO = new ErrorFW();
-    private final RoutedFW routedRO = new RoutedFW();
-    private final UnroutedFW unroutedRO = new UnroutedFW();
+    private final ControllerSpi controllerSpi;
+    private final MutableDirectBuffer writeBuffer;
 
-    private final Context context;
-    private final RingBuffer conductorCommands;
-    private final CopyBroadcastReceiver conductorResponses;
-    private final AtomicBuffer atomicBuffer;
-    private final Long2ObjectHashMap<CompletableFuture<?>> promisesByCorrelationId;
-
-    public WsController(Context context)
+    public WsController(
+        ControllerSpi controllerSpi)
     {
-        this.context = context;
-        this.conductorCommands = context.conductorCommands();
-        this.conductorResponses = new CopyBroadcastReceiver(new BroadcastReceiver(context.conductorResponseBuffer()));
-        this.atomicBuffer = new UnsafeBuffer(allocateDirect(MAX_SEND_LENGTH).order(nativeOrder()));
-        this.promisesByCorrelationId = new Long2ObjectHashMap<>();
+        this.controllerSpi = controllerSpi;
+        this.writeBuffer = new UnsafeBuffer(allocateDirect(MAX_SEND_LENGTH).order(nativeOrder()));
     }
 
     @Override
     public int process()
     {
-        int weight = 0;
-
-        weight += conductorResponses.receive(this::handleResponse);
-
-        return weight;
+        return controllerSpi.doProcess();
     }
 
     @Override
     public void close() throws Exception
     {
-        context.close();
+        controllerSpi.doClose();
     }
 
     @Override
@@ -95,6 +78,20 @@ public final class WsController implements Controller
         return "ws";
     }
 
+    public <T> T supplySource(
+        String source,
+        BiFunction<MessagePredicate, ToIntFunction<MessageConsumer>, T> factory)
+    {
+        return controllerSpi.doSupplySource(source, factory);
+    }
+
+    public <T> T supplyTarget(
+        String target,
+        BiFunction<ToIntFunction<MessageConsumer>, MessagePredicate, T> factory)
+    {
+        return controllerSpi.doSupplyTarget(target, factory);
+    }
+
     public CompletableFuture<Long> routeServer(
         String source,
         long sourceRef,
@@ -102,7 +99,19 @@ public final class WsController implements Controller
         long targetRef,
         String protocol)
     {
-        return route(Role.SERVER, source, sourceRef, target, targetRef, protocol);
+        long correlationId = controllerSpi.nextCorrelationId();
+
+        RouteFW route = routeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .correlationId(correlationId)
+                .role(b -> b.set(Role.SERVER))
+                .source(source)
+                .sourceRef(sourceRef)
+                .target(target)
+                .targetRef(targetRef)
+                .extension(b -> b.set(visitRouteEx(protocol)))
+                .build();
+
+        return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
     }
 
     public CompletableFuture<Long> routeClient(
@@ -112,7 +121,19 @@ public final class WsController implements Controller
         long targetRef,
         String protocol)
     {
-        return route(Role.CLIENT, source, sourceRef, target, targetRef, protocol);
+        long correlationId = controllerSpi.nextCorrelationId();
+
+        RouteFW route = routeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .correlationId(correlationId)
+                .role(b -> b.set(Role.CLIENT))
+                .source(source)
+                .sourceRef(sourceRef)
+                .target(target)
+                .targetRef(targetRef)
+                .extension(b -> b.set(visitRouteEx(protocol)))
+                .build();
+
+        return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
     }
 
     public CompletableFuture<Void> unrouteServer(
@@ -122,7 +143,19 @@ public final class WsController implements Controller
         long targetRef,
         String protocol)
     {
-        return unroute(Role.SERVER, source, sourceRef, target, targetRef, protocol);
+        long correlationId = controllerSpi.nextCorrelationId();
+
+        UnrouteFW unroute = unrouteRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                                     .correlationId(correlationId)
+                                     .role(b -> b.set(Role.SERVER))
+                                     .source(source)
+                                     .sourceRef(sourceRef)
+                                     .target(target)
+                                     .targetRef(targetRef)
+                                     .extension(b -> b.set(visitRouteEx(protocol)))
+                                     .build();
+
+        return controllerSpi.doUnroute(unroute.typeId(), unroute.buffer(), unroute.offset(), unroute.sizeof());
     }
 
     public CompletableFuture<Void> unrouteClient(
@@ -132,28 +165,19 @@ public final class WsController implements Controller
         long targetRef,
         String protocol)
     {
-        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, protocol);
-    }
+        long correlationId = controllerSpi.nextCorrelationId();
 
-    public WsStreams streams(
-        String source)
-    {
-        int streamsCapacity = context.streamsBufferCapacity();
-        int throttleCapacity = context.throttleBufferCapacity();
-        Path path = context.sourceStreamsPath().apply(source);
+        UnrouteFW unroute = unrouteRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                                     .correlationId(correlationId)
+                                     .role(b -> b.set(Role.CLIENT))
+                                     .source(source)
+                                     .sourceRef(sourceRef)
+                                     .target(target)
+                                     .targetRef(targetRef)
+                                     .extension(b -> b.set(visitRouteEx(protocol)))
+                                     .build();
 
-        return new WsStreams(streamsCapacity, throttleCapacity, path, false);
-    }
-
-    public WsStreams streams(
-        String source,
-        String target)
-    {
-        int streamsCapacity = context.streamsBufferCapacity();
-        int throttleCapacity = context.throttleBufferCapacity();
-        Path path = context.targetStreamsPath().apply(source, target);
-
-        return new WsStreams(streamsCapacity, throttleCapacity, path, true);
+        return controllerSpi.doUnroute(unroute.typeId(), unroute.buffer(), unroute.offset(), unroute.sizeof());
     }
 
     private Flyweight.Builder.Visitor visitRouteEx(
@@ -165,177 +189,4 @@ public final class WsController implements Controller
                      .build()
                      .sizeof();
     }
-
-    private int handleResponse(
-        int msgTypeId,
-        DirectBuffer buffer,
-        int index,
-        int length)
-    {
-        switch (msgTypeId)
-        {
-        case ErrorFW.TYPE_ID:
-            handleErrorResponse(buffer, index, length);
-            break;
-        case RoutedFW.TYPE_ID:
-            handleRoutedResponse(buffer, index, length);
-            break;
-        case UnroutedFW.TYPE_ID:
-            handleUnroutedResponse(buffer, index, length);
-            break;
-        default:
-            break;
-        }
-
-        return 1;
-    }
-
-    private void handleErrorResponse(
-        DirectBuffer buffer,
-        int index,
-        int length)
-    {
-        errorRO.wrap(buffer, index, length);
-        long correlationId = errorRO.correlationId();
-
-        CompletableFuture<?> promise = promisesByCorrelationId.remove(correlationId);
-        if (promise != null)
-        {
-            commandFailed(promise, "command failed");
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void handleRoutedResponse(
-        DirectBuffer buffer,
-        int index,
-        int length)
-    {
-        routedRO.wrap(buffer, index, length);
-        long correlationId = routedRO.correlationId();
-        long sourceRef = routedRO.sourceRef();
-
-        CompletableFuture<Long> promise = (CompletableFuture<Long>) promisesByCorrelationId.remove(correlationId);
-        if (promise != null)
-        {
-            commandSucceeded(promise, sourceRef);
-        }
-    }
-
-    private void handleUnroutedResponse(
-        DirectBuffer buffer,
-        int index,
-        int length)
-    {
-        unroutedRO.wrap(buffer, index, length);
-        long correlationId = unroutedRO.correlationId();
-
-        CompletableFuture<?> promise = promisesByCorrelationId.remove(correlationId);
-        if (promise != null)
-        {
-            commandSucceeded(promise);
-        }
-    }
-
-    private void commandSent(
-        final long correlationId,
-        final CompletableFuture<?> promise)
-    {
-        promisesByCorrelationId.put(correlationId, promise);
-    }
-
-    private <T> boolean commandSucceeded(
-        final CompletableFuture<T> promise)
-    {
-        return commandSucceeded(promise, null);
-    }
-
-    private <T> boolean commandSucceeded(
-        final CompletableFuture<T> promise,
-        final T value)
-    {
-        return promise.complete(value);
-    }
-
-    private boolean commandSendFailed(
-        final CompletableFuture<?> promise)
-    {
-        return commandFailed(promise, "unable to offer command");
-    }
-
-    private boolean commandFailed(
-        final CompletableFuture<?> promise,
-        final String message)
-    {
-        return promise.completeExceptionally(new IllegalStateException(message).fillInStackTrace());
-    }
-
-    private CompletableFuture<Long> route(
-        Role role,
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        final CompletableFuture<Long> promise = new CompletableFuture<>();
-
-        long correlationId = conductorCommands.nextCorrelationId();
-
-        RouteFW routeRO = routeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
-                                 .correlationId(correlationId)
-                                 .role(b -> b.set(role))
-                                 .source(source)
-                                 .sourceRef(sourceRef)
-                                 .target(target)
-                                 .targetRef(targetRef)
-                                 .extension(b -> b.set(visitRouteEx(protocol)))
-                                 .build();
-
-        if (!conductorCommands.write(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.sizeof()))
-        {
-            commandSendFailed(promise);
-        }
-        else
-        {
-            commandSent(correlationId, promise);
-        }
-
-        return promise;
-    }
-
-    private CompletableFuture<Void> unroute(
-        Role role,
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        final CompletableFuture<Void> promise = new CompletableFuture<>();
-
-        long correlationId = conductorCommands.nextCorrelationId();
-
-        UnrouteFW unrouteRO = unrouteRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
-                                       .correlationId(correlationId)
-                                       .role(b -> b.set(role))
-                                       .source(source)
-                                       .sourceRef(sourceRef)
-                                       .target(target)
-                                       .targetRef(targetRef)
-                                       .extension(b -> b.set(visitRouteEx(protocol)))
-                                       .build();
-
-        if (!conductorCommands.write(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.sizeof()))
-        {
-            commandSendFailed(promise);
-        }
-        else
-        {
-            commandSent(correlationId, promise);
-        }
-
-        return promise;
-    }
-
 }

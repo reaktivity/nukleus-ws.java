@@ -54,7 +54,7 @@
     <nukleus.version>0.10</nukleus.version>
 
     <nukleus.ws.spec.version>0.13</nukleus.ws.spec.version>
-    <reaktor.test.version>0.15</reaktor.test.version>
+    <reaktor.test.version>0.18</reaktor.test.version>
   </properties>
 
   <dependencies>

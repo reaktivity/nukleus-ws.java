@@ -54,7 +54,7 @@
     <nukleus.version>0.11</nukleus.version>
 
     <nukleus.ws.spec.version>0.13</nukleus.ws.spec.version>
-    <reaktor.test.version>0.20</reaktor.test.version>
+    <reaktor.version>0.22</reaktor.version>
   </properties>
 
   <dependencies>
@@ -72,8 +72,15 @@
     </dependency>
     <dependency>
       <groupId>org.reaktivity</groupId>
-      <artifactId>reaktor-test</artifactId>
-      <version>${reaktor.test.version}</version>
+      <artifactId>reaktor</artifactId>
+      <version>${reaktor.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.reaktivity</groupId>
+      <artifactId>reaktor</artifactId>
+      <type>test-jar</type>
+      <version>${reaktor.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

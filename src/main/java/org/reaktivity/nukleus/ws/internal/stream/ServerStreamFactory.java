@@ -930,7 +930,6 @@ public final class ServerStreamFactory implements StreamFactory
     {
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                .streamId(streamId)
-                               .extension(e -> e.reset())
                                .build();
 
         stream.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
@@ -942,7 +941,6 @@ public final class ServerStreamFactory implements StreamFactory
     {
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(streamId)
-                                     .extension(e -> e.reset())
                                      .build();
 
         stream.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
@@ -1001,7 +999,6 @@ public final class ServerStreamFactory implements StreamFactory
         // TODO: WsAbortEx
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(streamId)
-                .extension(e -> e.reset())
                 .build();
 
         stream.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
@@ -1024,6 +1021,7 @@ public final class ServerStreamFactory implements StreamFactory
         String protocol)
     {
         return (buffer, offset, limit) ->
+            protocol == null ? 0 :
             wsBeginExRW.wrap(buffer, offset, limit)
                        .protocol(protocol)
                        .build()

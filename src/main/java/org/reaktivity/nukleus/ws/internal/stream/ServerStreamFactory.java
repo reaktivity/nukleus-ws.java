@@ -42,7 +42,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
-import org.reaktivity.nukleus.route.RouteHandler;
+import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
@@ -106,7 +106,7 @@ public final class ServerStreamFactory implements StreamFactory
     private final WsHeaderFW wsHeaderRO = new WsHeaderFW();
     private final WsHeaderFW.Builder wsHeaderRW = new WsHeaderFW.Builder();
 
-    private final RouteHandler router;
+    private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final BufferPool bufferPool;
     private final LongSupplier supplyStreamId;
@@ -117,7 +117,7 @@ public final class ServerStreamFactory implements StreamFactory
 
     public ServerStreamFactory(
         Configuration config,
-        RouteHandler router,
+        RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
         LongSupplier supplyStreamId,

@@ -224,7 +224,7 @@ public final class ServerStreamFactory implements StreamFactory
         private int payloadLength;
         private int maskingKey;
 
-        private int acceptWindowBudget;
+        private int sourceWindowBudget;
         private int sourceWindowBudgetAdjustment;
 
         private ServerAcceptStream(
@@ -373,9 +373,9 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            acceptWindowBudget -= data.length();
+            sourceWindowBudget -= data.length();
 
-            if (acceptWindowBudget < 0)
+            if (sourceWindowBudget < 0)
             {
                 doReset(acceptThrottle, acceptId);
             }
@@ -576,7 +576,7 @@ public final class ServerStreamFactory implements StreamFactory
             final int sourceWindowCredit = window.credit() + sourceWindowBudgetAdjustment;
             final int sourceWindowPadding = window.padding();
 
-            acceptWindowBudget += sourceWindowCredit;
+            sourceWindowBudget += sourceWindowCredit;
             sourceWindowBudgetAdjustment = 0;
 
             doWindow(acceptThrottle, acceptId, sourceWindowCredit, sourceWindowPadding);
@@ -791,6 +791,7 @@ public final class ServerStreamFactory implements StreamFactory
             final int targetWindowCredit = window.credit() + targetWindowBudgetAdjustment;
             final int targetWindowPadding = window.padding() + MAXIMUM_HEADER_SIZE;
             targetWindowBudget += targetWindowCredit;
+            targetWindowBudgetAdjustment = 0;
             doWindow(connectReplyThrottle, connectReplyId, targetWindowCredit, targetWindowPadding);
         }
 

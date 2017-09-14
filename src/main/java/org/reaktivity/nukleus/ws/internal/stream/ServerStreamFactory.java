@@ -1034,6 +1034,7 @@ public final class ServerStreamFactory implements StreamFactory
         return (buffer, offset, limit) ->
             wsEndExRW.wrap(buffer, offset, limit)
                      .code(code)
+                     .reason("")
                      .build()
                      .sizeof();
     }

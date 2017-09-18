@@ -601,6 +601,7 @@ public final class ServerStreamFactory implements StreamFactory
 
         private int targetWindowBudget;
         private int targetWindowBudgetAdjustment;
+        private int targetWindowPadding;
 
         private ServerConnectReplyStream(
             MessageConsumer connectReplyThrottle,
@@ -698,7 +699,8 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            targetWindowBudget -= data.length() + MAXIMUM_HEADER_SIZE;
+            targetWindowBudget -= data.length() + targetWindowPadding;
+            System.out.printf("WS targetWindowBudget = %d\n", targetWindowBudget);
 
             if (targetWindowBudget < 0)
             {
@@ -789,7 +791,7 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleWindow(WindowFW window)
         {
             final int targetWindowCredit = window.credit() + targetWindowBudgetAdjustment;
-            final int targetWindowPadding = window.padding() + MAXIMUM_HEADER_SIZE;
+            targetWindowPadding = window.padding() + MAXIMUM_HEADER_SIZE;
             targetWindowBudget += targetWindowCredit;
             targetWindowBudgetAdjustment = 0;
             doWindow(connectReplyThrottle, connectReplyId, targetWindowCredit, targetWindowPadding);

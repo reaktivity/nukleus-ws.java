@@ -65,6 +65,7 @@ import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
 public final class ServerStreamFactory implements StreamFactory
 {
+    private static final int MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE = 125;
     private static final int MAXIMUM_DATA_LENGTH = (1 << Short.SIZE) - 1;
 
     private static final byte[] HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(UTF_8);
@@ -433,17 +434,21 @@ public final class ServerStreamFactory implements StreamFactory
 
                     switch (wsHeader.opcode())
                     {
-                    case 1:
+                    case 0x01:
                         this.decodeState = this::decodeText;
                         break;
-                    case 2:
+                    case 0x02:
                         this.decodeState = this::decodeBinary;
                         break;
-                    case 8:
+                    case 0x08:
                         this.decodeState = this::decodeClose;
                         break;
+                    case 0x0a:
+                        this.decodeState = this::decodePong;
+                        break;
                     default:
-                        throw new IllegalStateException("not yet implemented");
+                        this.decodeState = this::decodeUnexpected;
+                        break;
                     }
 
                     sourceWindowBytesAdjustment += wsHeader.sizeof();
@@ -453,6 +458,7 @@ public final class ServerStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    doReset(acceptThrottle, acceptId);
                     doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
                 }
             }
@@ -556,6 +562,49 @@ public final class ServerStreamFactory implements StreamFactory
                 SIZE_OF_SHORT ? payload.buffer().getShort(payload.offset()) : STATUS_NORMAL_CLOSURE;
 
             doWsEnd(connectTarget, connectId, status);
+        }
+
+        private void decodePong(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            final int payloadSize = payload.sizeof();
+            if (payloadSize > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+            {
+                doReset(acceptThrottle, acceptId);
+                doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+            }
+            else if (payloadSize > 0)
+            {
+                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+                final int payloadLimit = payload.limit();
+                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+
+                payloadProgress += decodeBytes;
+                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                if (payloadLimit > payload.limit())
+                {
+                    sourceWindowFramesAdjustment--;
+
+                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
+                    this.decodeState.accept(streamId, payload);
+                }
+            }
+        }
+
+        private void decodeUnexpected(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            doReset(acceptThrottle, acceptId);
+            doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
         }
 
         private void handleThrottle(

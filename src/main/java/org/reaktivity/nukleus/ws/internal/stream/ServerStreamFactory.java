@@ -434,6 +434,9 @@ public final class ServerStreamFactory implements StreamFactory
 
                     switch (wsHeader.opcode())
                     {
+                    case 0x00:
+                        this.decodeState = this::decodeContinuation;
+                        break;
                     case 0x01:
                         this.decodeState = this::decodeText;
                         break;
@@ -483,6 +486,39 @@ public final class ServerStreamFactory implements StreamFactory
 
                 this.slotOffset = 0;
                 this.slotIndex = NO_SLOT;
+            }
+        }
+
+        private void decodeContinuation(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            final int payloadSize = payload.sizeof();
+            if (payloadSize > 0)
+            {
+                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
+                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+                final int payloadLimit = payload.limit();
+                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+                doWsData(connectTarget, connectId, 0x80, maskingKey, payload);
+
+                payloadProgress += decodeBytes;
+                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                if (payloadLimit > payload.limit())
+                {
+                    sourceWindowFramesAdjustment--;
+
+                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
+                    this.decodeState.accept(streamId, payload);
+                }
             }
         }
 

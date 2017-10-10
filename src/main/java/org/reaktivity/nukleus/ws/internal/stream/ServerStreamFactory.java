@@ -65,6 +65,7 @@ import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
 public final class ServerStreamFactory implements StreamFactory
 {
+    private static final int MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE = 125;
     private static final int MAXIMUM_DATA_LENGTH = (1 << Short.SIZE) - 1;
 
     private static final byte[] HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(UTF_8);
@@ -426,17 +427,24 @@ public final class ServerStreamFactory implements StreamFactory
 
                     switch (wsHeader.opcode())
                     {
-                    case 1:
+                    case 0x00:
+                        this.decodeState = this::decodeContinuation;
+                        break;
+                    case 0x01:
                         this.decodeState = this::decodeText;
                         break;
-                    case 2:
+                    case 0x02:
                         this.decodeState = this::decodeBinary;
                         break;
-                    case 8:
+                    case 0x08:
                         this.decodeState = this::decodeClose;
                         break;
+                    case 0x0a:
+                        this.decodeState = this::decodePong;
+                        break;
                     default:
-                        throw new IllegalStateException("not yet implemented");
+                        this.decodeState = this::decodeUnexpected;
+                        break;
                     }
 
                     final int wsHeaderSize = wsHeader.sizeof();
@@ -447,6 +455,7 @@ public final class ServerStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    doReset(acceptThrottle, acceptId);
                     doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
                 }
             }
@@ -471,6 +480,37 @@ public final class ServerStreamFactory implements StreamFactory
 
                 this.slotOffset = 0;
                 this.slotIndex = NO_SLOT;
+            }
+        }
+
+        private void decodeContinuation(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            final int payloadSize = payload.sizeof();
+            if (payloadSize > 0)
+            {
+                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
+                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+                final int payloadLimit = payload.limit();
+                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+                doWsData(connectTarget, connectId, 0x80, maskingKey, payload);
+
+                payloadProgress += decodeBytes;
+                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                if (payloadLimit > payload.limit())
+                {
+                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
+                    this.decodeState.accept(streamId, payload);
+                }
             }
         }
 
@@ -546,6 +586,47 @@ public final class ServerStreamFactory implements StreamFactory
                 SIZE_OF_SHORT ? payload.buffer().getShort(payload.offset()) : STATUS_NORMAL_CLOSURE;
 
             doWsEnd(connectTarget, connectId, status);
+        }
+
+        private void decodePong(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            final int payloadSize = payload.sizeof();
+            if (payloadSize > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+            {
+                doReset(acceptThrottle, acceptId);
+                doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+            }
+            else if (payloadSize > 0)
+            {
+                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+                final int payloadLimit = payload.limit();
+                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+
+                payloadProgress += decodeBytes;
+                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                if (payloadLimit > payload.limit())
+                {
+                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
+                    this.decodeState.accept(streamId, payload);
+                }
+            }
+        }
+
+        private void decodeUnexpected(
+            final long streamId,
+            final OctetsFW payload)
+        {
+            doReset(acceptThrottle, acceptId);
+            doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
         }
 
         private void handleThrottle(
@@ -700,7 +781,6 @@ public final class ServerStreamFactory implements StreamFactory
             DataFW data)
         {
             targetWindowBudget -= data.length() + targetWindowPadding;
-            System.out.printf("WS targetWindowBudget = %d\n", targetWindowBudget);
 
             if (targetWindowBudget < 0)
             {
@@ -876,7 +956,6 @@ public final class ServerStreamFactory implements StreamFactory
     {
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                .streamId(streamId)
-                               .extension(e -> e.reset())
                                .build();
 
         stream.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
@@ -888,7 +967,6 @@ public final class ServerStreamFactory implements StreamFactory
     {
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(streamId)
-                                     .extension(e -> e.reset())
                                      .build();
 
         stream.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
@@ -947,7 +1025,6 @@ public final class ServerStreamFactory implements StreamFactory
         // TODO: WsAbortEx
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(streamId)
-                .extension(e -> e.reset())
                 .build();
 
         stream.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
@@ -970,6 +1047,7 @@ public final class ServerStreamFactory implements StreamFactory
         String protocol)
     {
         return (buffer, offset, limit) ->
+            protocol == null ? 0 :
             wsBeginExRW.wrap(buffer, offset, limit)
                        .protocol(protocol)
                        .build()
@@ -982,6 +1060,7 @@ public final class ServerStreamFactory implements StreamFactory
         return (buffer, offset, limit) ->
             wsEndExRW.wrap(buffer, offset, limit)
                      .code(code)
+                     .reason("")
                      .build()
                      .sizeof();
     }

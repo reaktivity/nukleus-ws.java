@@ -70,6 +70,7 @@ public final class ServerStreamFactory implements StreamFactory
 
     private static final byte[] HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(UTF_8);
     private static final String WEBSOCKET_VERSION_13 = "13";
+    private static final int MAXIMUM_HEADER_SIZE = 14;
 
     private final MessageDigest sha1 = initSHA1();
 
@@ -224,10 +225,8 @@ public final class ServerStreamFactory implements StreamFactory
         private int payloadLength;
         private int maskingKey;
 
-        private int acceptWindowBytes;
-        private int acceptWindowFrames;
-        private int sourceWindowBytesAdjustment;
-        private int sourceWindowFramesAdjustment;
+        private int sourceWindowBudget;
+        private int sourceWindowBudgetAdjustment;
 
         private ServerAcceptStream(
             MessageConsumer acceptThrottle,
@@ -375,20 +374,14 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            acceptWindowBytes -= data.length();
-            acceptWindowFrames--;
+            sourceWindowBudget -= data.length();
 
-            if (acceptWindowBytes < 0 || acceptWindowFrames < 0)
+            if (sourceWindowBudget < 0)
             {
                 doReset(acceptThrottle, acceptId);
             }
             else
             {
-                if (acceptWindowBytes == 0 || acceptWindowFrames == 0)
-                {
-                    doZeroWindow(acceptThrottle, acceptId);
-                }
-
                 OctetsFW payload = data.payload();
                 if(this.slotLimit != 0)
                 {
@@ -454,9 +447,10 @@ public final class ServerStreamFactory implements StreamFactory
                         break;
                     }
 
-                    sourceWindowBytesAdjustment += wsHeader.sizeof();
+                    final int wsHeaderSize = wsHeader.sizeof();
+                    sourceWindowBudgetAdjustment += wsHeaderSize;
 
-                    httpPayload.wrap(httpPayload.buffer(), httpPayload.offset() + wsHeader.sizeof(), httpPayload.limit());
+                    httpPayload.wrap(httpPayload.buffer(), httpPayload.offset() + wsHeaderSize, httpPayload.limit());
                     this.decodeState.accept(streamId, httpPayload);
                 }
                 else
@@ -514,8 +508,6 @@ public final class ServerStreamFactory implements StreamFactory
 
                 if (payloadLimit > payload.limit())
                 {
-                    sourceWindowFramesAdjustment--;
-
                     payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
                     this.decodeState.accept(streamId, payload);
                 }
@@ -548,8 +540,6 @@ public final class ServerStreamFactory implements StreamFactory
 
                 if (payloadSize > payload.sizeof())
                 {
-                    sourceWindowFramesAdjustment--;
-
                     payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
                     this.decodeState.accept(streamId, payload);
                 }
@@ -581,8 +571,6 @@ public final class ServerStreamFactory implements StreamFactory
 
                 if (payloadLimit > payload.limit())
                 {
-                    sourceWindowFramesAdjustment--;
-
                     payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
                     this.decodeState.accept(streamId, payload);
                 }
@@ -627,8 +615,6 @@ public final class ServerStreamFactory implements StreamFactory
 
                 if (payloadLimit > payload.limit())
                 {
-                    sourceWindowFramesAdjustment--;
-
                     payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
                     this.decodeState.accept(streamId, payload);
                 }
@@ -668,22 +654,13 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleWindow(
             WindowFW window)
         {
-            final int targetWindowBytesDelta = window.update();
-            final int targetWindowFramesDelta = window.frames();
+            final int sourceWindowCredit = window.credit() + sourceWindowBudgetAdjustment;
+            final int sourceWindowPadding = window.padding();
 
-            final int sourceWindowBytesDelta = targetWindowBytesDelta + sourceWindowBytesAdjustment;
-            final int sourceWindowFramesDelta = targetWindowFramesDelta + sourceWindowFramesAdjustment;
+            sourceWindowBudget += sourceWindowCredit;
+            sourceWindowBudgetAdjustment = 0;
 
-            acceptWindowBytes += Math.max(sourceWindowBytesDelta, 0);
-            sourceWindowBytesAdjustment = Math.min(sourceWindowBytesDelta, 0);
-
-            acceptWindowFrames += Math.max(sourceWindowFramesDelta, 0);
-            sourceWindowFramesAdjustment = Math.min(sourceWindowFramesDelta, 0);
-
-            if (sourceWindowBytesDelta > 0 || sourceWindowFramesDelta > 0)
-            {
-                doWindow(acceptThrottle, acceptId, Math.max(sourceWindowBytesDelta, 0), Math.max(sourceWindowFramesDelta, 0));
-            }
+            doWindow(acceptThrottle, acceptId, sourceWindowCredit, sourceWindowPadding);
         }
 
         private void handleReset(
@@ -703,12 +680,9 @@ public final class ServerStreamFactory implements StreamFactory
 
         private MessageConsumer streamState;
 
-        private int targetWindowBytes;
-        private int targetWindowFrames;
-        private int targetWindowBytesAdjustment;
-        private int targetWindowFramesAdjustment;
-
-        private Consumer<WindowFW> windowHandler;
+        private int targetWindowBudget;
+        private int targetWindowBudgetAdjustment;
+        private int targetWindowPadding;
 
         private ServerConnectReplyStream(
             MessageConsumer connectReplyThrottle,
@@ -796,7 +770,6 @@ public final class ServerStreamFactory implements StreamFactory
                 this.acceptReplyId = newAcceptReplyId;
 
                 this.streamState = this::afterBeginOrData;
-                this.windowHandler = this::processInitialWindow;
             }
             else
             {
@@ -807,20 +780,14 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            targetWindowBytes -= data.length();
-            targetWindowFrames--;
+            targetWindowBudget -= data.length() + targetWindowPadding;
 
-            if (targetWindowBytes < 0 || targetWindowFrames < 0)
+            if (targetWindowBudget < 0)
             {
                 doReset(connectReplyThrottle, connectReplyId);
             }
             else
             {
-                if (targetWindowBytes == 0 || targetWindowFrames == 0)
-                {
-                    doZeroWindow(connectReplyThrottle, connectReplyId);
-                }
-
                 final OctetsFW payload = data.payload();
                 final OctetsFW extension = data.extension();
 
@@ -833,11 +800,7 @@ public final class ServerStreamFactory implements StreamFactory
 
                 final int wsHeaderSize = doHttpData(acceptReply, acceptReplyId, payload, flags);
 
-                targetWindowBytesAdjustment -= wsHeaderSize;
-                if (payload.sizeof() + wsHeaderSize > MAXIMUM_DATA_LENGTH)
-                {
-                    targetWindowFramesAdjustment--;
-                }
+                targetWindowBudgetAdjustment += MAXIMUM_HEADER_SIZE - wsHeaderSize;
             }
         }
 
@@ -893,7 +856,7 @@ public final class ServerStreamFactory implements StreamFactory
             {
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                this.windowHandler.accept(window);
+                handleWindow(window);
                 break;
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
@@ -905,35 +868,13 @@ public final class ServerStreamFactory implements StreamFactory
             }
         }
 
-        private void processInitialWindow(WindowFW window)
+        private void handleWindow(WindowFW window)
         {
-            final int sourceWindowBytesDelta = window.update();
-
-            targetWindowBytesAdjustment -= sourceWindowBytesDelta * 20 / 100;
-
-            this.windowHandler = this::processWindow;
-            this.windowHandler.accept(window);
-        }
-
-        private void processWindow(WindowFW window)
-        {
-            final int sourceWindowBytesDelta = window.update();
-            final int sourceWindowFramesDelta = window.frames();
-
-            final int targetWindowBytesDelta = sourceWindowBytesDelta + targetWindowBytesAdjustment;
-            final int targetWindowFramesDelta = sourceWindowFramesDelta + targetWindowFramesAdjustment;
-
-            targetWindowBytes += Math.max(targetWindowBytesDelta, 0);
-            targetWindowBytesAdjustment = Math.min(targetWindowBytesDelta, 0);
-
-            targetWindowFrames += Math.max(targetWindowFramesDelta, 0);
-            targetWindowFramesAdjustment = Math.min(targetWindowFramesDelta, 0);
-
-            if (targetWindowBytesDelta > 0 || targetWindowFramesDelta > 0)
-            {
-                doWindow(connectReplyThrottle, connectReplyId,
-                        Math.max(targetWindowBytesDelta, 0), Math.max(targetWindowFramesDelta, 0));
-            }
+            final int targetWindowCredit = window.credit() + targetWindowBudgetAdjustment;
+            targetWindowPadding = window.padding() + MAXIMUM_HEADER_SIZE;
+            targetWindowBudget += targetWindowCredit;
+            targetWindowBudgetAdjustment = 0;
+            doWindow(connectReplyThrottle, connectReplyId, targetWindowCredit, targetWindowPadding);
         }
 
         private void handleReset(
@@ -1127,26 +1068,13 @@ public final class ServerStreamFactory implements StreamFactory
     private void doWindow(
         final MessageConsumer throttle,
         final long throttleId,
-        final int writableBytes,
-        final int writableFrames)
+        final int credit,
+        final int padding)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(throttleId)
-                .update(writableBytes)
-                .frames(writableFrames)
-                .build();
-
-        throttle.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
-    }
-
-    private void doZeroWindow(
-        final MessageConsumer throttle,
-        final long throttleId)
-    {
-        final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .streamId(throttleId)
-                .update(0)
-                .frames(0)
+                .credit(credit)
+                .padding(padding)
                 .build();
 
         throttle.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());

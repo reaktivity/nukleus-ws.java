@@ -174,7 +174,7 @@ public final class ServerStreamFactory implements StreamFactory
                     acceptName.equals(route.source().asString());
         };
 
-        final RouteFW route = router.resolve(filter, this::wrapRoute);
+        final RouteFW route = router.resolve(begin.authorization(), filter, this::wrapRoute);
 
         MessageConsumer newStream = null;
 
@@ -328,7 +328,7 @@ public final class ServerStreamFactory implements StreamFactory
                             (protocols == null || protocols.contains(protocol));
                 };
 
-                final RouteFW route = router.resolve(filter, wrapRoute);
+                final RouteFW route = router.resolve(begin.authorization(), filter, wrapRoute);
 
                 if (route != null)
                 {

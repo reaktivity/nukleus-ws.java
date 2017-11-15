@@ -655,13 +655,14 @@ public final class ServerStreamFactory implements StreamFactory
             WindowFW window)
         {
             connectWindowBudget += window.credit();
-            connectWindowPadding = acceptWindowPadding = window.padding();
+            connectWindowPadding = window.padding();
 
             final int acceptWindowCredit = connectWindowBudget - acceptWindowBudget;
 
             if (acceptWindowCredit > 0)
             {
                 acceptWindowBudget += acceptWindowCredit;
+                acceptWindowPadding = Math.max(acceptWindowPadding, window.padding());
                 doWindow(acceptThrottle, acceptId, acceptWindowCredit, acceptWindowPadding);
             }
         }
@@ -893,12 +894,12 @@ public final class ServerStreamFactory implements StreamFactory
         {
             acceptReplyWindowBudget += window.credit();
             acceptReplyWindowPadding = window.padding();
-            connectReplyWindowPadding = acceptReplyWindowPadding + MAXIMUM_HEADER_SIZE;
 
             final int connectReplyWindowCredit = acceptReplyWindowBudget - connectReplyWindowBudget;
             if (connectReplyWindowCredit > 0)
             {
                 connectReplyWindowBudget += connectReplyWindowCredit;
+                connectReplyWindowPadding = Math.max(connectReplyWindowPadding, acceptReplyWindowPadding + MAXIMUM_HEADER_SIZE);
                 doWindow(connectReplyThrottle, connectReplyId, connectReplyWindowCredit, connectReplyWindowPadding);
             }
         }

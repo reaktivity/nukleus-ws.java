@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.ws.internal.streams.server;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -51,6 +52,8 @@ public class OpeningHandshakeIT
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
+    //TODO: check "response" tests for correct functionality, the "request" tests should be fine now
+
     @Test
     @Specification({
         "${route}/server/controller",
@@ -61,6 +64,53 @@ public class OpeningHandshakeIT
         k3po.finish();
     }
 
+    @Ignore("Not working yet")
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.cookie/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithCookieRequestHeader()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.headers.random.case/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithRandomCaseRequestHeaders()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.headers.random.case/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithRandomCaseResponseHeaders()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.origin/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithRequestHeaderOrigin()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+
     @Test
     @Specification({
         "${route}/server/controller",
@@ -70,4 +120,250 @@ public class OpeningHandshakeIT
     {
         k3po.finish();
     }
+
+    /*
+        Test from this point down may not work
+     */
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.sec.websocket.protocol.negotiated/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithRequestHeaderSecWebSocketProtocolNegotiated()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.sec.websocket.extensions/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithRequestHeaderSecWebSocketExtensions()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.sec.websocket.extensions.partial.agreement/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWithSomeExtensionsNegotiated()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.sec.websocket.extensions.reordered/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishConnectionWhenOrderOfExtensionsNegotiatedChanged()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.method.not.get/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenMethodNotGet() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.version.not.http.1.1/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenVersionNotHttp11() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.upgrade.missing/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenRequestHeaderUpgradeMissing()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.upgrade.not.websocket/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenRequestHeaderUpgradeNotWebSocket()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.connection.missing/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenRequestHeaderConnectionMissing()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.connection.not.upgrade/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenRequestHeaderConnectionNotUpgrade()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.sec.websocket.key.missing/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenRequestHeaderSecWebSocketKeyMissing()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.sec.websocket.key.not.16bytes.base64/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenRequestHeaderSecWebSocketKeyNot16BytesBase64()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/request.header.sec.websocket.version.not.13/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailHandshakeWhenRequestHeaderSecWebSocketVersionNot13()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.connection.missing/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderConnectionMissing()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.connection.not.upgrade/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderConnectionNotUpgrade()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.upgrade.missing/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderUpgradeMissing()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.upgrade.not.websocket/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderUpgradeNotWebSocket()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.sec.websocket.accept.missing/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderSecWebSocketAcceptMissing()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.sec.websocket.accept.not.hashed/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderSecWebSocketAcceptNotHashed()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.sec.websocket.extensions.not.negotiated/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderSecWebSocketExtensionsNotNegotiated()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/response.header.sec.websocket.protocol.not.negotiated/handshake.request",
+            "${server}/connection.established/handshake.response" })
+    public void shouldFailConnectionWhenResponseHeaderSecWebSocketProtocolNotNegotiated()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+            "${route}/server/controller",
+            "${client}/multiple.connections.established/handshake.requests",
+            "${server}/connection.established/handshake.response" })
+    public void shouldEstablishMultipleConnections() throws Exception
+    {
+        k3po.finish();
+    }
+
 }

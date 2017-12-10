@@ -685,6 +685,8 @@ public final class ServerStreamFactory implements StreamFactory
             final int capacity = payload.sizeof();
             final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                       .streamId(streamId)
+                                      .groupId(0)
+                                      .claimed(0)
                                       .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskKey)))
                                       .extension(e -> e.set(visitWsDataEx(flags)))
                                       .build();
@@ -929,6 +931,8 @@ public final class ServerStreamFactory implements StreamFactory
             acceptReplyWindowBudget -= wsHeaderSize + payloadFragmentSize + acceptReplyWindowPadding;
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                 .streamId(targetId)
+                                .groupId(0)
+                                .claimed(0)
                                 .payload(p -> p.set((b, o, m) -> wsHeaderSize)
                                                .put(payload.buffer(), payload.offset(), payloadFragmentSize))
                                 .build();
@@ -941,6 +945,8 @@ public final class ServerStreamFactory implements StreamFactory
                 acceptReplyWindowBudget -= payloadRemaining + acceptReplyWindowPadding;
                 DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(targetId)
+                                     .groupId(0)
+                                     .claimed(0)
                                      .payload(
                                          p -> p.set(payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining))
                                      .build();
@@ -1092,6 +1098,7 @@ public final class ServerStreamFactory implements StreamFactory
                 .streamId(throttleId)
                 .credit(credit)
                 .padding(padding)
+                .groupId(0)
                 .build();
 
         throttle.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());

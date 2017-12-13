@@ -686,7 +686,7 @@ public final class ServerStreamFactory implements StreamFactory
             final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                       .streamId(streamId)
                                       .groupId(0)
-                                      .claimed(0)
+                                      .padding(0)
                                       .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskKey)))
                                       .extension(e -> e.set(visitWsDataEx(flags)))
                                       .build();
@@ -932,7 +932,7 @@ public final class ServerStreamFactory implements StreamFactory
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                 .streamId(targetId)
                                 .groupId(0)
-                                .claimed(0)
+                                .padding(0)
                                 .payload(p -> p.set((b, o, m) -> wsHeaderSize)
                                                .put(payload.buffer(), payload.offset(), payloadFragmentSize))
                                 .build();
@@ -946,7 +946,7 @@ public final class ServerStreamFactory implements StreamFactory
                 DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(targetId)
                                      .groupId(0)
-                                     .claimed(0)
+                                     .padding(0)
                                      .payload(
                                          p -> p.set(payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining))
                                      .build();

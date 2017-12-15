@@ -376,7 +376,7 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            acceptWindowBudget -= data.length() + acceptWindowPadding;
+            acceptWindowBudget -= data.length() + data.padding();
 
             if (acceptWindowBudget < 0)
             {
@@ -686,7 +686,7 @@ public final class ServerStreamFactory implements StreamFactory
             final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                       .streamId(streamId)
                                       .groupId(0)
-                                      .padding(0)
+                                      .padding(connectWindowPadding)
                                       .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskKey)))
                                       .extension(e -> e.set(visitWsDataEx(flags)))
                                       .build();
@@ -708,7 +708,6 @@ public final class ServerStreamFactory implements StreamFactory
         private int acceptReplyWindowBudget;
         private int acceptReplyWindowPadding;
         private int connectReplyWindowBudget;
-        private int connectReplyWindowPadding;
 
         private ServerConnectReplyStream(
             MessageConsumer connectReplyThrottle,
@@ -806,7 +805,7 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            connectReplyWindowBudget -= data.length() + connectReplyWindowPadding;
+            connectReplyWindowBudget -= data.length() + data.padding();
 
             if (connectReplyWindowBudget < 0)
             {
@@ -824,7 +823,7 @@ public final class ServerStreamFactory implements StreamFactory
                     flags = wsDataEx.flags();
                 }
 
-                doHttpData(acceptReply, acceptReplyId, payload, flags);
+                doHttpData(acceptReply, acceptReplyId, acceptReplyWindowPadding, payload, flags);
             }
         }
 
@@ -901,7 +900,7 @@ public final class ServerStreamFactory implements StreamFactory
             if (connectReplyWindowCredit > 0)
             {
                 connectReplyWindowBudget += connectReplyWindowCredit;
-                connectReplyWindowPadding = Math.max(connectReplyWindowPadding, acceptReplyWindowPadding + MAXIMUM_HEADER_SIZE);
+                int connectReplyWindowPadding = acceptReplyWindowPadding + MAXIMUM_HEADER_SIZE;
                 doWindow(connectReplyThrottle, connectReplyId, connectReplyWindowCredit, connectReplyWindowPadding);
             }
         }
@@ -915,6 +914,7 @@ public final class ServerStreamFactory implements StreamFactory
         private int doHttpData(
                 MessageConsumer stream,
                 long targetId,
+                int padding,
                 OctetsFW payload,
                 int flagsAndOpcode)
         {
@@ -932,7 +932,7 @@ public final class ServerStreamFactory implements StreamFactory
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                 .streamId(targetId)
                                 .groupId(0)
-                                .padding(0)
+                                .padding(padding)
                                 .payload(p -> p.set((b, o, m) -> wsHeaderSize)
                                                .put(payload.buffer(), payload.offset(), payloadFragmentSize))
                                 .build();
@@ -946,7 +946,7 @@ public final class ServerStreamFactory implements StreamFactory
                 DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(targetId)
                                      .groupId(0)
-                                     .padding(0)
+                                     .padding(padding)
                                      .payload(
                                          p -> p.set(payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining))
                                      .build();

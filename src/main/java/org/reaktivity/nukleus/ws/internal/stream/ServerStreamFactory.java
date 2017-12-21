@@ -900,8 +900,8 @@ public final class ServerStreamFactory implements StreamFactory
             if (connectReplyCredit > 0)
             {
                 connectReplyBudget += connectReplyCredit;
-                int connectReplyWindowPadding = acceptReplyPadding + MAXIMUM_HEADER_SIZE;
-                doWindow(connectReplyThrottle, connectReplyId, connectReplyCredit, connectReplyWindowPadding);
+                int connectReplyPadding = acceptReplyPadding + MAXIMUM_HEADER_SIZE;
+                doWindow(connectReplyThrottle, connectReplyId, connectReplyCredit, connectReplyPadding);
             }
         }
 

@@ -225,10 +225,10 @@ public final class ServerStreamFactory implements StreamFactory
         private int payloadLength;
         private int maskingKey;
 
-        private int acceptWindowBudget;
-        private int acceptWindowPadding;
-        private int connectWindowBudget;
-        private int connectWindowPadding;
+        private int acceptBudget;
+        private int acceptPadding;
+        private int connectBudget;
+        private int connectPadding;
 
         private ServerAcceptStream(
             MessageConsumer acceptThrottle,
@@ -376,9 +376,9 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            acceptWindowBudget -= data.length() + acceptWindowPadding;
+            acceptBudget -= data.length() + data.padding();
 
-            if (acceptWindowBudget < 0)
+            if (acceptBudget < 0)
             {
                 doReset(acceptThrottle, acceptId);
             }
@@ -654,16 +654,16 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleWindow(
             WindowFW window)
         {
-            connectWindowBudget += window.credit();
-            connectWindowPadding = window.padding();
+            connectBudget += window.credit();
+            connectPadding = window.padding();
 
-            final int acceptWindowCredit = connectWindowBudget - acceptWindowBudget;
+            final int acceptCredit = connectBudget - acceptBudget;
 
-            if (acceptWindowCredit > 0)
+            if (acceptCredit > 0)
             {
-                acceptWindowBudget += acceptWindowCredit;
-                acceptWindowPadding = Math.max(acceptWindowPadding, window.padding());
-                doWindow(acceptThrottle, acceptId, acceptWindowCredit, acceptWindowPadding);
+                acceptBudget += acceptCredit;
+                acceptPadding = Math.max(acceptPadding, window.padding());
+                doWindow(acceptThrottle, acceptId, acceptCredit, acceptPadding);
             }
         }
 
@@ -680,13 +680,13 @@ public final class ServerStreamFactory implements StreamFactory
                 int maskKey,
                 OctetsFW payload)
         {
-            connectWindowBudget -= payload.sizeof() + connectWindowPadding;
+            connectBudget -= payload.sizeof() + connectPadding;
 
             final int capacity = payload.sizeof();
             final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                       .streamId(streamId)
                                       .groupId(0)
-                                      .padding(0)
+                                      .padding(connectPadding)
                                       .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskKey)))
                                       .extension(e -> e.set(visitWsDataEx(flags)))
                                       .build();
@@ -705,10 +705,9 @@ public final class ServerStreamFactory implements StreamFactory
 
         private MessageConsumer streamState;
 
-        private int acceptReplyWindowBudget;
-        private int acceptReplyWindowPadding;
-        private int connectReplyWindowBudget;
-        private int connectReplyWindowPadding;
+        private int acceptReplyBudget;
+        private int acceptReplyPadding;
+        private int connectReplyBudget;
 
         private ServerConnectReplyStream(
             MessageConsumer connectReplyThrottle,
@@ -806,9 +805,9 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleData(
             DataFW data)
         {
-            connectReplyWindowBudget -= data.length() + connectReplyWindowPadding;
+            connectReplyBudget -= data.length() + data.padding();
 
-            if (connectReplyWindowBudget < 0)
+            if (connectReplyBudget < 0)
             {
                 doReset(connectReplyThrottle, connectReplyId);
             }
@@ -824,7 +823,7 @@ public final class ServerStreamFactory implements StreamFactory
                     flags = wsDataEx.flags();
                 }
 
-                doHttpData(acceptReply, acceptReplyId, payload, flags);
+                doHttpData(acceptReply, acceptReplyId, acceptReplyPadding, payload, flags);
             }
         }
 
@@ -894,15 +893,15 @@ public final class ServerStreamFactory implements StreamFactory
 
         private void handleWindow(WindowFW window)
         {
-            acceptReplyWindowBudget += window.credit();
-            acceptReplyWindowPadding = window.padding();
+            acceptReplyBudget += window.credit();
+            acceptReplyPadding = window.padding();
 
-            final int connectReplyWindowCredit = acceptReplyWindowBudget - connectReplyWindowBudget;
-            if (connectReplyWindowCredit > 0)
+            final int connectReplyCredit = acceptReplyBudget - connectReplyBudget;
+            if (connectReplyCredit > 0)
             {
-                connectReplyWindowBudget += connectReplyWindowCredit;
-                connectReplyWindowPadding = Math.max(connectReplyWindowPadding, acceptReplyWindowPadding + MAXIMUM_HEADER_SIZE);
-                doWindow(connectReplyThrottle, connectReplyId, connectReplyWindowCredit, connectReplyWindowPadding);
+                connectReplyBudget += connectReplyCredit;
+                int connectReplyPadding = acceptReplyPadding + MAXIMUM_HEADER_SIZE;
+                doWindow(connectReplyThrottle, connectReplyId, connectReplyCredit, connectReplyPadding);
             }
         }
 
@@ -915,6 +914,7 @@ public final class ServerStreamFactory implements StreamFactory
         private int doHttpData(
                 MessageConsumer stream,
                 long targetId,
+                int padding,
                 OctetsFW payload,
                 int flagsAndOpcode)
         {
@@ -928,11 +928,11 @@ public final class ServerStreamFactory implements StreamFactory
             final int wsHeaderSize = wsHeader.sizeof();
             final int payloadFragmentSize = Math.min(MAXIMUM_DATA_LENGTH - wsHeaderSize,  payloadSize);
 
-            acceptReplyWindowBudget -= wsHeaderSize + payloadFragmentSize + acceptReplyWindowPadding;
+            acceptReplyBudget -= wsHeaderSize + payloadFragmentSize + acceptReplyPadding;
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                 .streamId(targetId)
                                 .groupId(0)
-                                .padding(0)
+                                .padding(padding)
                                 .payload(p -> p.set((b, o, m) -> wsHeaderSize)
                                                .put(payload.buffer(), payload.offset(), payloadFragmentSize))
                                 .build();
@@ -942,11 +942,11 @@ public final class ServerStreamFactory implements StreamFactory
             final int payloadRemaining = payloadSize - payloadFragmentSize;
             if (payloadRemaining > 0)
             {
-                acceptReplyWindowBudget -= payloadRemaining + acceptReplyWindowPadding;
+                acceptReplyBudget -= payloadRemaining + acceptReplyPadding;
                 DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(targetId)
                                      .groupId(0)
-                                     .padding(0)
+                                     .padding(padding)
                                      .payload(
                                          p -> p.set(payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining))
                                      .build();

@@ -19,7 +19,6 @@ import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static org.agrona.BitUtil.SIZE_OF_SHORT;
-import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_NORMAL_CLOSURE;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_PROTOCOL_ERROR;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_UNEXPECTED_CONDITION;
@@ -37,6 +36,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -61,7 +61,6 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsDataExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsEndExFW;
-import org.reaktivity.nukleus.ws.internal.util.function.LongObjectBiConsumer;
 
 public final class ServerStreamFactory implements StreamFactory
 {
@@ -97,7 +96,7 @@ public final class ServerStreamFactory implements StreamFactory
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
 
-    private final OctetsFW octetsRO = new OctetsFW();
+    private final OctetsFW payload = new OctetsFW();
 
     private final HttpBeginExFW httpBeginExRO = new HttpBeginExFW();
     private final HttpBeginExFW.Builder httpBeginExRW = new HttpBeginExFW.Builder();
@@ -110,7 +109,6 @@ public final class ServerStreamFactory implements StreamFactory
 
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
-    private final BufferPool bufferPool;
     private final LongSupplier supplyStreamId;
     private final LongSupplier supplyCorrelationId;
 
@@ -128,7 +126,6 @@ public final class ServerStreamFactory implements StreamFactory
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
-        this.bufferPool = requireNonNull(bufferPool);
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyCorrelationId = requireNonNull(supplyCorrelationId);
         this.correlations = requireNonNull(correlations);
@@ -215,11 +212,10 @@ public final class ServerStreamFactory implements StreamFactory
         private long connectId;
 
         private MessageConsumer streamState;
-        private LongObjectBiConsumer<OctetsFW> decodeState;
+        private DecoderState decodeState;
 
-        private int slotIndex = NO_SLOT;
-        private int slotLimit;
-        private int slotOffset;
+        private MutableDirectBuffer header;
+        private int headerLength;
 
         private int payloadProgress;
         private int payloadLength;
@@ -237,6 +233,8 @@ public final class ServerStreamFactory implements StreamFactory
         {
             this.acceptThrottle = acceptThrottle;
             this.acceptId = acceptId;
+
+            header = new UnsafeBuffer(new byte[MAXIMUM_HEADER_SIZE]);
 
             this.streamState = this::beforeBegin;
             this.decodeState = this::decodeHeader;
@@ -384,16 +382,15 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                OctetsFW payload = data.payload();
-                if(this.slotLimit != 0)
+                OctetsFW payload = dataRO.payload();
+                int offset = payload.offset();
+                int length = payload.sizeof();
+                while (length > 0)
                 {
-                    MutableDirectBuffer acceptBuffer = bufferPool.buffer(this.slotIndex, this.slotOffset);
-                    acceptBuffer.putBytes(this.slotLimit, payload.buffer(), payload.offset(), payload.sizeof());
-                    this.slotLimit += payload.sizeof();
-                    payload = octetsRO.wrap(acceptBuffer, 0, slotLimit);
+                    int consumed = decodeState.decode(dataRO.buffer(), offset, payload.sizeof());
+                    offset += consumed;
+                    length -= consumed;
                 }
-
-                decodeState.accept(acceptId, payload);
             }
         }
 
@@ -410,200 +407,230 @@ public final class ServerStreamFactory implements StreamFactory
             doWsAbort(connectTarget, connectId, STATUS_UNEXPECTED_CONDITION);
         }
 
-        private void decodeHeader(
-            final long streamId,
-            final OctetsFW httpPayload)
+        private int wsHeaderLength(DirectBuffer buffer)
         {
-            final DirectBuffer buffer = httpPayload.buffer();
-            final int offset = httpPayload.offset();
-            final int limit = httpPayload.limit();
+            int wsHeaderLength = 2;
+            byte secondByte = buffer.getByte(1);
+            wsHeaderLength += lengthSize(secondByte) - 1;
 
-            if(wsHeaderRO.canWrap(buffer, offset, limit))
+            if (isMasked(secondByte))
             {
-                final WsHeaderFW wsHeader = wsHeaderRO.wrap(buffer, offset, limit);
-                if (wsHeader.mask() && wsHeader.maskingKey() != 0L)
+                wsHeaderLength+= 4;
+            }
+
+            return wsHeaderLength;
+        }
+
+        private boolean isMasked(byte b)
+        {
+            return (b & 0x80) != 0;
+        }
+
+        private int lengthSize(byte b)
+        {
+            switch (b & 0x7f)
+            {
+                case 0x7e:
+                    return 3;
+
+                case 0x7f:
+                    return 9;
+
+                default:
+                    return 1;
+            }
+        }
+
+        // @return no bytes consumed to assemble websocket header
+        private int assembleHeader(DirectBuffer buffer, int offset, int length)
+        {
+            int remaining = Math.min(length, MAXIMUM_HEADER_SIZE - headerLength);
+            header.putBytes(headerLength, buffer, offset, remaining);
+
+            int consumed = remaining;
+            if (headerLength + remaining >= 2)
+            {
+                int wsHeaderLength = wsHeaderLength(header);
+                // eventual headLength must not be more than wsHeaderLength
+                if (headerLength + remaining > wsHeaderLength)
                 {
-                    this.maskingKey = wsHeader.maskingKey();
-                    this.payloadLength = wsHeader.length();
-                    this.payloadProgress = 0;
+                    consumed = wsHeaderLength - headerLength;
+                }
+            }
 
-                    switch (wsHeader.opcode())
-                    {
-                    case 0x00:
-                        this.decodeState = this::decodeContinuation;
-                        break;
-                    case 0x01:
-                        this.decodeState = this::decodeText;
-                        break;
-                    case 0x02:
-                        this.decodeState = this::decodeBinary;
-                        break;
-                    case 0x08:
-                        this.decodeState = this::decodeClose;
-                        break;
-                    case 0x0a:
-                        this.decodeState = this::decodePong;
-                        break;
-                    default:
-                        this.decodeState = this::decodeUnexpected;
-                        break;
-                    }
+            headerLength += consumed;
+            return consumed;
+        }
 
-                    final int wsHeaderSize = wsHeader.sizeof();
-                    httpPayload.wrap(httpPayload.buffer(), httpPayload.offset() + wsHeaderSize, httpPayload.limit());
-                    this.decodeState.accept(streamId, httpPayload);
+        private int decodeHeader(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length)
+        {
+            int consumed;
+            if (headerLength > 0 || length < MAXIMUM_HEADER_SIZE)
+            {
+                consumed = assembleHeader(buffer, offset, length);
+                if (headerLength >= 2 && headerLength == wsHeaderLength(header))
+                {
+                    wsHeaderRO.wrap(header, 0, headerLength);
+                    headerLength = 0;
                 }
                 else
                 {
-                    doReset(acceptThrottle, acceptId);
-                    doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+                    return consumed;            // partial header
                 }
             }
             else
             {
-                if (this.slotIndex == NO_SLOT)
-                {
-                    this.slotIndex = bufferPool.acquire(streamId);
-                    MutableDirectBuffer acceptBuffer = bufferPool.buffer(slotIndex);
-                    acceptBuffer.putBytes(0, buffer, offset, limit);
-                    this.slotLimit = limit - offset;
-                }
-                else
-                {
-                    this.slotOffset = offset;
-                }
+                // No need to assemble header as complete header is available
+                wsHeaderRO.wrap(buffer, offset, offset + MAXIMUM_HEADER_SIZE);
+                consumed = wsHeaderRO.sizeof();
             }
 
-            if (offset == limit && this.slotIndex != NO_SLOT)
+            if (wsHeaderRO.mask() && wsHeaderRO.maskingKey() != 0L)
             {
-                bufferPool.release(this.slotIndex);
+                this.maskingKey = wsHeaderRO.maskingKey();
+                this.payloadLength = wsHeaderRO.length();
+                this.payloadProgress = 0;
 
-                this.slotOffset = 0;
-                this.slotIndex = NO_SLOT;
-            }
-        }
-
-        private void decodeContinuation(
-            final long streamId,
-            final OctetsFW payload)
-        {
-            final int payloadSize = payload.sizeof();
-            if (payloadSize > 0)
-            {
-                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
-
-                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
-
-                final int payloadLimit = payload.limit();
-                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
-                doWsData(connectTarget, connectId, 0x80, maskingKey, payload);
-
-                payloadProgress += decodeBytes;
-                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
-
-                if (payloadProgress == payloadLength)
+                switch (wsHeaderRO.opcode())
                 {
-                    this.decodeState = this::decodeHeader;
-                }
-
-                if (payloadLimit > payload.limit())
-                {
-                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
-                    this.decodeState.accept(streamId, payload);
+                case 0x00:
+                    this.decodeState = this::decodeContinuation;
+                    break;
+                case 0x01:
+                    this.decodeState = this::decodeText;
+                    break;
+                case 0x02:
+                    this.decodeState = this::decodeBinary;
+                    break;
+                case 0x08:
+                    this.decodeState = this::decodeClose;
+                    break;
+                case 0x0a:
+                    this.decodeState = this::decodePong;
+                    break;
+                default:
+                    this.decodeState = this::decodeUnexpected;
+                    break;
                 }
             }
-        }
-
-        private void decodeText(
-            final long streamId,
-            final OctetsFW payload)
-        {
-            // TODO canWrap for UTF-8 split multi-byte characters
-            final int payloadSize = payload.sizeof();
-
-            if (payloadSize > 0)
-            {
-                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
-
-                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
-
-                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
-                doWsData(connectTarget, connectId, 0x81, maskingKey, payload);
-
-                payloadProgress += decodeBytes;
-                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
-
-                if (payloadProgress == payloadLength)
-                {
-                    this.decodeState = this::decodeHeader;
-                }
-
-                if (payloadSize > payload.sizeof())
-                {
-                    payload.wrap(payload.buffer(), payload.sizeof(), payloadSize);
-                    this.decodeState.accept(streamId, payload);
-                }
-            }
-        }
-
-        private void decodeBinary(
-            final long streamId,
-            final OctetsFW payload)
-        {
-            final int payloadSize = payload.sizeof();
-            if (payloadSize > 0)
-            {
-                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
-
-                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
-
-                final int payloadLimit = payload.limit();
-                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
-                doWsData(connectTarget, connectId, 0x82, maskingKey, payload);
-
-                payloadProgress += decodeBytes;
-                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
-
-                if (payloadProgress == payloadLength)
-                {
-                    this.decodeState = this::decodeHeader;
-                }
-
-                if (payloadLimit > payload.limit())
-                {
-                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
-                    this.decodeState.accept(streamId, payload);
-                }
-            }
-        }
-
-        private void decodeClose(
-            final long streamId,
-            final OctetsFW payload)
-        {
-            // canWrap?
-            final short status = payload.sizeof() >=
-                SIZE_OF_SHORT ? payload.buffer().getShort(payload.offset()) : STATUS_NORMAL_CLOSURE;
-
-            doWsEnd(connectTarget, connectId, status);
-        }
-
-        private void decodePong(
-            final long streamId,
-            final OctetsFW payload)
-        {
-            final int payloadSize = payload.sizeof();
-            if (payloadSize > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+            else
             {
                 doReset(acceptThrottle, acceptId);
                 doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
             }
-            else if (payloadSize > 0)
+
+            return consumed;
+        }
+
+        private int decodeContinuation(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length)
+        {
+            final int payloadSize = length;
+
+            // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
+            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+            payload.wrap(buffer, offset, offset + decodeBytes);
+            doWsData(connectTarget, connectId, 0x80, maskingKey, payload);
+
+            payloadProgress += decodeBytes;
+            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+            if (payloadProgress == payloadLength)
+            {
+                this.decodeState = this::decodeHeader;
+            }
+
+            return decodeBytes;
+        }
+
+        private int decodeText(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length)
+        {
+            // TODO canWrap for UTF-8 split multi-byte characters
+            final int payloadSize = length;
+
+            // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
+            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+            payload.wrap(buffer, offset, offset + decodeBytes);
+            doWsData(connectTarget, connectId, 0x81, maskingKey, payload);
+
+            payloadProgress += decodeBytes;
+            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+            if (payloadProgress == payloadLength)
+            {
+                this.decodeState = this::decodeHeader;
+            }
+
+            return decodeBytes;
+        }
+
+        private int decodeBinary(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length)
+        {
+            final int payloadSize = length;
+
+            // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
+            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+
+            payload.wrap(buffer, offset, offset + decodeBytes);
+            doWsData(connectTarget, connectId, 0x82, maskingKey, payload);
+
+            payloadProgress += decodeBytes;
+            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+
+            if (payloadProgress == payloadLength)
+            {
+                this.decodeState = this::decodeHeader;
+            }
+
+            return decodeBytes;
+        }
+
+        private int decodeClose(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length)
+        {
+            // canWrap?
+            final short status = length >=
+                SIZE_OF_SHORT ? buffer.getShort(offset) : STATUS_NORMAL_CLOSURE;
+
+            doWsEnd(connectTarget, connectId, status);
+            return SIZE_OF_SHORT;
+        }
+
+        private int decodePong(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length)
+        {
+            final int payloadSize = length;
+            if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+            {
+                doReset(acceptThrottle, acceptId);
+                doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+                return length;
+            }
+            else
             {
                 final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
 
-                final int payloadLimit = payload.limit();
-                payload.wrap(payload.buffer(), payload.offset(), payload.offset() + decodeBytes);
+                payload.wrap(buffer, offset, offset + decodeBytes);
 
                 payloadProgress += decodeBytes;
                 maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
@@ -613,20 +640,18 @@ public final class ServerStreamFactory implements StreamFactory
                     this.decodeState = this::decodeHeader;
                 }
 
-                if (payloadLimit > payload.limit())
-                {
-                    payload.wrap(payload.buffer(), payload.limit(), payloadLimit);
-                    this.decodeState.accept(streamId, payload);
-                }
+                return decodeBytes;
             }
         }
 
-        private void decodeUnexpected(
-            final long streamId,
-            final OctetsFW payload)
+        private int decodeUnexpected(
+            final DirectBuffer directBuffer,
+            final int offset,
+            final int length)
         {
             doReset(acceptThrottle, acceptId);
             doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+            return length;
         }
 
         private void handleThrottle(
@@ -1133,5 +1158,21 @@ public final class ServerStreamFactory implements StreamFactory
             LangUtil.rethrowUnchecked(ex);
             return null;
         }
+    }
+
+    public static void print(String str, DirectBuffer buffer, int offset, int length)
+    {
+        System.out.printf("------- %s offset=%d length=%d\n", str, offset, length);
+        for(int i=0; i < length; i++)
+        {
+            System.out.printf("%02x ", buffer.getByte(offset + i));
+        }
+        System.out.println("\n--------");
+    }
+
+    @FunctionalInterface
+    private interface DecoderState
+    {
+        int decode(DirectBuffer buffer, int offset, int length);
     }
 }

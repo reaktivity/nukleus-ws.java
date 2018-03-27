@@ -119,7 +119,6 @@ public final class WsHeaderFW extends Flyweight
         }
 
         return wsFrameLength <= maxLength;
-
     }
 
     @Override

@@ -445,6 +445,7 @@ public final class ServerStreamFactory implements StreamFactory
         private int assembleHeader(DirectBuffer buffer, int offset, int length)
         {
             int remaining = Math.min(length, MAXIMUM_HEADER_SIZE - headerLength);
+            // may copy more than actual header length (up to max header length), but will adjust at the end
             header.putBytes(headerLength, buffer, offset, remaining);
 
             int consumed = remaining;
@@ -1158,16 +1159,6 @@ public final class ServerStreamFactory implements StreamFactory
             LangUtil.rethrowUnchecked(ex);
             return null;
         }
-    }
-
-    public static void print(String str, DirectBuffer buffer, int offset, int length)
-    {
-        System.out.printf("------- %s offset=%d length=%d\n", str, offset, length);
-        for(int i=0; i < length; i++)
-        {
-            System.out.printf("%02x ", buffer.getByte(offset + i));
-        }
-        System.out.println("\n--------");
     }
 
     @FunctionalInterface

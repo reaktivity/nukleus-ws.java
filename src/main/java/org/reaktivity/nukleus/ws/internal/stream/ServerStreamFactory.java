@@ -71,6 +71,8 @@ public final class ServerStreamFactory implements StreamFactory
     private static final String WEBSOCKET_VERSION_13 = "13";
     private static final int MAXIMUM_HEADER_SIZE = 14;
 
+    private static final DirectBuffer CLOSE_PAYLOAD = new UnsafeBuffer(new byte[0]);
+
     private final MessageDigest sha1 = initSHA1();
 
     private final RouteFW routeRO = new RouteFW();
@@ -891,7 +893,7 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleEnd(
             EndFW end)
         {
-            payload.wrap(new UnsafeBuffer(new byte[0]), 0, 0);
+            payload.wrap(CLOSE_PAYLOAD, 0, 0);
             doHttpData(acceptReply, acceptReplyId, acceptReplyPadding, payload, 0x88);
             doHttpEnd(acceptReply, acceptReplyId);
         }

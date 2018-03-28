@@ -18,12 +18,12 @@ package org.reaktivity.nukleus.ws.internal.stream;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
-import static org.agrona.BitUtil.SIZE_OF_SHORT;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_NORMAL_CLOSURE;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_PROTOCOL_ERROR;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_UNEXPECTED_CONDITION;
 import static org.reaktivity.nukleus.ws.internal.util.BufferUtil.xor;
 
+import java.nio.ByteOrder;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.Base64.Encoder;
@@ -226,6 +226,9 @@ public final class ServerStreamFactory implements StreamFactory
         private int connectBudget;
         private int connectPadding;
 
+        private int statusLength;
+        private MutableDirectBuffer status;
+
         private ServerAcceptStream(
             MessageConsumer acceptThrottle,
             long acceptId,
@@ -235,6 +238,7 @@ public final class ServerStreamFactory implements StreamFactory
             this.acceptId = acceptId;
 
             header = new UnsafeBuffer(new byte[MAXIMUM_HEADER_SIZE]);
+            status = new UnsafeBuffer(new byte[2]);
 
             this.streamState = this::beforeBegin;
             this.decodeState = this::decodeHeader;
@@ -391,7 +395,16 @@ public final class ServerStreamFactory implements StreamFactory
                     offset += consumed;
                     length -= consumed;
                 }
+
+                // Since we have two decoding states for a frame, the following is
+                // needed to handle empty close, empty ping etc. Otherwise, it will be
+                // delayed until next handleData() (which may not come for e.g empty close frame)
+                if (payloadLength == 0)
+                {
+                    decodeState.decode(dataRO.buffer(), 0, 0);
+                }
             }
+
         }
 
         private void handleEnd(
@@ -531,11 +544,10 @@ public final class ServerStreamFactory implements StreamFactory
             final int offset,
             final int length)
         {
-            final int payloadSize = length;
 
             // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
 
-            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+            final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
             payload.wrap(buffer, offset, offset + decodeBytes);
             doWsData(connectTarget, connectId, 0x80, maskingKey, payload);
@@ -557,11 +569,10 @@ public final class ServerStreamFactory implements StreamFactory
             final int length)
         {
             // TODO canWrap for UTF-8 split multi-byte characters
-            final int payloadSize = length;
 
             // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
 
-            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+            final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
             payload.wrap(buffer, offset, offset + decodeBytes);
             doWsData(connectTarget, connectId, 0x81, maskingKey, payload);
@@ -582,11 +593,9 @@ public final class ServerStreamFactory implements StreamFactory
             final int offset,
             final int length)
         {
-            final int payloadSize = length;
-
             // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
 
-            final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+            final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
             payload.wrap(buffer, offset, offset + decodeBytes);
             doWsData(connectTarget, connectId, 0x82, maskingKey, payload);
@@ -607,20 +616,6 @@ public final class ServerStreamFactory implements StreamFactory
             final int offset,
             final int length)
         {
-            // canWrap?
-            final short status = length >=
-                SIZE_OF_SHORT ? buffer.getShort(offset) : STATUS_NORMAL_CLOSURE;
-
-            doWsEnd(connectTarget, connectId, status);
-            return SIZE_OF_SHORT;
-        }
-
-        private int decodePong(
-            final DirectBuffer buffer,
-            final int offset,
-            final int length)
-        {
-            final int payloadSize = length;
             if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
             {
                 doReset(acceptThrottle, acceptId);
@@ -629,7 +624,47 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                final int decodeBytes = Math.min(payloadSize, payloadLength - payloadProgress);
+                final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
+                payloadProgress += decodeBytes;
+
+                int remaining = Math.min(length, 2 - statusLength);
+                if (remaining > 0)
+                {
+                    status.putBytes(statusLength, buffer, offset, remaining);
+                    statusLength += remaining;
+                }
+
+                if (payloadProgress == payloadLength)
+                {
+                    short code = STATUS_NORMAL_CLOSURE;
+                    if (statusLength == 2)
+                    {
+                        xor(status, 0, 2, maskingKey);
+                        code = status.getShort(0, ByteOrder.BIG_ENDIAN);
+                    }
+                    statusLength = 0;
+                    doWsEnd(connectTarget, connectId, code);
+                    this.decodeState = this::decodeHeader;
+                }
+
+                return decodeBytes;
+            }
+        }
+
+        private int decodePong(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length)
+        {
+            if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+            {
+                doReset(acceptThrottle, acceptId);
+                doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+                return length;
+            }
+            else
+            {
+                final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
                 payload.wrap(buffer, offset, offset + decodeBytes);
 

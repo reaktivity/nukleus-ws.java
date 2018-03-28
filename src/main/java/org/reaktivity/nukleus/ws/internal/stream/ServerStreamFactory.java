@@ -891,6 +891,8 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleEnd(
             EndFW end)
         {
+            payload.wrap(new UnsafeBuffer(new byte[0]), 0, 0);
+            doHttpData(acceptReply, acceptReplyId, acceptReplyPadding, payload, 0x88);
             doHttpEnd(acceptReply, acceptReplyId);
         }
 

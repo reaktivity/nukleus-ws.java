@@ -393,7 +393,7 @@ public final class ServerStreamFactory implements StreamFactory
                 int length = payload.sizeof();
                 while (length > 0)
                 {
-                    int consumed = decodeState.decode(dataRO.buffer(), offset, payload.sizeof());
+                    int consumed = decodeState.decode(dataRO.buffer(), offset, length);
                     offset += consumed;
                     length -= consumed;
                 }

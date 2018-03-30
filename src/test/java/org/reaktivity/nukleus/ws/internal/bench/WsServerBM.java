@@ -81,7 +81,7 @@ public class WsServerBM
         reaktor = Reaktor.builder()
                          .config(configuration)
                          .nukleus("ws"::equals)
-                         .controller(WsController.class::isAssignableFrom)
+                         .controller("ws"::equals)
                          .errorHandler(ex -> ex.printStackTrace(System.err))
                          .build()
                          .start();

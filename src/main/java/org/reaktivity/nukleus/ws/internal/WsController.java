@@ -29,6 +29,7 @@ import org.reaktivity.nukleus.ControllerSpi;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
+import org.reaktivity.nukleus.ws.internal.types.control.FreezeFW;
 import org.reaktivity.nukleus.ws.internal.types.control.Role;
 import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.ws.internal.types.control.UnrouteFW;
@@ -41,6 +42,7 @@ public final class WsController implements Controller
     // TODO: thread-safe flyweights or command queue from public methods
     private final RouteFW.Builder routeRW = new RouteFW.Builder();
     private final UnrouteFW.Builder unrouteRW = new UnrouteFW.Builder();
+    private final FreezeFW.Builder freezeRW = new FreezeFW.Builder();
 
     private final WsRouteExFW.Builder routeExRW = new WsRouteExFW.Builder();
 
@@ -178,6 +180,17 @@ public final class WsController implements Controller
                                      .build();
 
         return controllerSpi.doUnroute(unroute.typeId(), unroute.buffer(), unroute.offset(), unroute.sizeof());
+    }
+
+    public CompletableFuture<Void> freeze()
+    {
+        long correlationId = controllerSpi.nextCorrelationId();
+
+        FreezeFW freeze = freezeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                                  .correlationId(correlationId)
+                                  .build();
+
+        return controllerSpi.doFreeze(freeze.typeId(), freeze.buffer(), freeze.offset(), freeze.sizeof());
     }
 
     private Flyweight.Builder.Visitor visitRouteEx(

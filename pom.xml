@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.reaktivity</groupId>
   <artifactId>nukleus-ws</artifactId>
-  <version>0.40</version>
+  <version>0.41</version>
   <name>WebSocket Nukleus Implementation</name>
   <description>WebSocket Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-ws.java</url>
@@ -55,8 +55,8 @@
     <nukleus.plugin.version>0.28</nukleus.plugin.version>
     <nukleus.version>0.21</nukleus.version>
 
-    <nukleus.ws.spec.version>0.28</nukleus.ws.spec.version>
-    <reaktor.version>0.48</reaktor.version>
+    <nukleus.ws.spec.version>0.29</nukleus.ws.spec.version>
+    <reaktor.version>0.56</reaktor.version>
   </properties>
 
   <dependencies>

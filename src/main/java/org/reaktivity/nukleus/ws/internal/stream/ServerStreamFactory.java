@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.ws.internal.stream;
 
+import static java.nio.ByteOrder.BIG_ENDIAN;
+import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
@@ -555,7 +557,7 @@ public final class ServerStreamFactory implements StreamFactory
             doWsData(connectTarget, connectId, 0x80, maskingKey, payload);
 
             payloadProgress += decodeBytes;
-            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+            maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
 
             if (payloadProgress == payloadLength)
             {
@@ -580,7 +582,7 @@ public final class ServerStreamFactory implements StreamFactory
             doWsData(connectTarget, connectId, 0x81, maskingKey, payload);
 
             payloadProgress += decodeBytes;
-            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+            maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
 
             if (payloadProgress == payloadLength)
             {
@@ -603,7 +605,7 @@ public final class ServerStreamFactory implements StreamFactory
             doWsData(connectTarget, connectId, 0x82, maskingKey, payload);
 
             payloadProgress += decodeBytes;
-            maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+            maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
 
             if (payloadProgress == payloadLength)
             {
@@ -611,6 +613,24 @@ public final class ServerStreamFactory implements StreamFactory
             }
 
             return decodeBytes;
+        }
+
+        private int rotateMaskingKey(int maskingKey, int decodeBytes)
+        {
+            decodeBytes = decodeBytes % 4;
+            int left;
+            int right;
+            if (nativeOrder() == BIG_ENDIAN)
+            {
+                left = decodeBytes * 8;
+                right = Integer.SIZE - left;
+            }
+            else
+            {
+                right = decodeBytes * 8;
+                left = Integer.SIZE - right;
+            }
+            return (maskingKey << left) | (maskingKey >>> right);
         }
 
         private int decodeClose(
@@ -671,7 +691,7 @@ public final class ServerStreamFactory implements StreamFactory
                 payload.wrap(buffer, offset, offset + decodeBytes);
 
                 payloadProgress += decodeBytes;
-                maskingKey = (maskingKey >>> decodeBytes & 0x03) | (maskingKey << (Integer.SIZE - decodeBytes & 0x03));
+                maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
 
                 if (payloadProgress == payloadLength)
                 {

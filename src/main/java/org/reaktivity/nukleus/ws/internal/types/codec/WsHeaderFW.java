@@ -239,7 +239,7 @@ public final class WsHeaderFW extends Flyweight
     {
         if (length8bytes >> 17L != 0L)
         {
-            throw new IllegalStateException("frame payload too long");
+            throw new IllegalStateException(String.format("frame payload=%d too long", length8bytes));
         }
     }
 

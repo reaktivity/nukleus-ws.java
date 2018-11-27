@@ -16,8 +16,8 @@
 package org.reaktivity.nukleus.ws.internal.bench;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.reaktivity.nukleus.Configuration.DIRECTORY_PROPERTY_NAME;
-import static org.reaktivity.nukleus.Configuration.STREAMS_BUFFER_CAPACITY_PROPERTY_NAME;
+import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_DIRECTORY;
+import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_STREAMS_BUFFER_CAPACITY;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
@@ -74,8 +74,8 @@ public class WsServerBM
 
     {
         Properties properties = new Properties();
-        properties.setProperty(DIRECTORY_PROPERTY_NAME, "target/nukleus-benchmarks");
-        properties.setProperty(STREAMS_BUFFER_CAPACITY_PROPERTY_NAME, Long.toString(1024L * 1024L * 16L));
+        properties.setProperty(REAKTOR_DIRECTORY.name(), "target/nukleus-benchmarks");
+        properties.setProperty(REAKTOR_STREAMS_BUFFER_CAPACITY.name(), Long.toString(1024L * 1024L * 16L));
 
         configuration = new Configuration(properties);
         reaktor = Reaktor.builder()

@@ -229,6 +229,7 @@ public final class ServerStreamFactory implements StreamFactory
         private int acceptPadding;
         private int connectBudget;
         private int connectPadding;
+        private long connectTraceId;
 
         private int statusLength;
         private MutableDirectBuffer status;
@@ -270,7 +271,7 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(acceptThrottle, acceptId);
+                doReset(acceptThrottle, acceptId, 0L);
             }
         }
 
@@ -295,7 +296,7 @@ public final class ServerStreamFactory implements StreamFactory
                 handleAbort(abort);
                 break;
             default:
-                doReset(acceptThrottle, acceptId);
+                doReset(acceptThrottle, acceptId, 0L);
                 break;
             }
         }
@@ -340,6 +341,7 @@ public final class ServerStreamFactory implements StreamFactory
 
                 if (route != null)
                 {
+                    final long traceId = begin.trace();
                     final WsRouteExFW wsRouteEx = route.extension().get(wsRouteExRO::wrap);
 
                     sha1.reset();
@@ -360,7 +362,7 @@ public final class ServerStreamFactory implements StreamFactory
 
                     correlations.put(newCorrelationId, handshake);
 
-                    doWsBegin(connectTarget, newConnectId, connectRef, newCorrelationId, protocol);
+                    doWsBegin(connectTarget, newConnectId, connectRef, newCorrelationId, traceId, protocol);
                     router.setThrottle(connectName, newConnectId, this::handleThrottle);
 
                     this.connectTarget = connectTarget;
@@ -368,12 +370,12 @@ public final class ServerStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    doReset(acceptThrottle, acceptId); // 400
+                    doReset(acceptThrottle, acceptId, 0L); // 400
                 }
             }
             else
             {
-                doReset(acceptThrottle, acceptId); // 404
+                doReset(acceptThrottle, acceptId, 0L); // 404
             }
 
             this.streamState = this::afterBegin;
@@ -386,10 +388,12 @@ public final class ServerStreamFactory implements StreamFactory
 
             if (acceptBudget < 0)
             {
-                doReset(acceptThrottle, acceptId);
+                doReset(acceptThrottle, acceptId, 0L);
             }
             else
             {
+                connectTraceId = data.trace();
+
                 OctetsFW payload = dataRO.payload();
                 int offset = payload.offset();
                 int length = payload.sizeof();
@@ -414,14 +418,16 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleEnd(
             EndFW end)
         {
-            doWsEnd(connectTarget, connectId, STATUS_NORMAL_CLOSURE);
+            final long traceId = end.trace();
+            doWsEnd(connectTarget, connectId, traceId, STATUS_NORMAL_CLOSURE);
         }
 
         private void handleAbort(
             AbortFW abort)
         {
+            final long traceId = abort.trace();
             // TODO: WsAbortEx
-            doWsAbort(connectTarget, connectId, STATUS_UNEXPECTED_CONDITION);
+            doWsAbort(connectTarget, connectId, traceId, STATUS_UNEXPECTED_CONDITION);
         }
 
         private int wsHeaderLength(DirectBuffer buffer)
@@ -536,8 +542,8 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(acceptThrottle, acceptId);
-                doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+                doReset(acceptThrottle, acceptId, 0L);
+                doWsAbort(connectTarget, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
             }
 
             return consumed;
@@ -640,8 +646,8 @@ public final class ServerStreamFactory implements StreamFactory
         {
             if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
             {
-                doReset(acceptThrottle, acceptId);
-                doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+                doReset(acceptThrottle, acceptId, 0L);
+                doWsAbort(connectTarget, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
                 return length;
             }
             else
@@ -665,7 +671,7 @@ public final class ServerStreamFactory implements StreamFactory
                         code = status.getShort(0, ByteOrder.BIG_ENDIAN);
                     }
                     statusLength = 0;
-                    doWsEnd(connectTarget, connectId, code);
+                    doWsEnd(connectTarget, connectId, connectTraceId, code);
                     this.decodeState = this::decodeHeader;
                 }
 
@@ -680,8 +686,8 @@ public final class ServerStreamFactory implements StreamFactory
         {
             if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
             {
-                doReset(acceptThrottle, acceptId);
-                doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+                doReset(acceptThrottle, acceptId, 0L);
+                doWsAbort(connectTarget, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
                 return length;
             }
             else
@@ -707,8 +713,8 @@ public final class ServerStreamFactory implements StreamFactory
             final int offset,
             final int length)
         {
-            doReset(acceptThrottle, acceptId);
-            doWsAbort(connectTarget, connectId, STATUS_PROTOCOL_ERROR);
+            doReset(acceptThrottle, acceptId, 0L);
+            doWsAbort(connectTarget, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
             return length;
         }
 
@@ -746,14 +752,16 @@ public final class ServerStreamFactory implements StreamFactory
             {
                 acceptBudget += acceptCredit;
                 acceptPadding = Math.max(acceptPadding, window.padding());
-                doWindow(acceptThrottle, acceptId, acceptCredit, acceptPadding);
+                final long acceptTraceId = window.trace();
+                doWindow(acceptThrottle, acceptId, acceptTraceId, acceptCredit, acceptPadding);
             }
         }
 
         private void handleReset(
             ResetFW reset)
         {
-            doReset(acceptThrottle, acceptId);
+            final long traceId = reset.trace();
+            doReset(acceptThrottle, acceptId, traceId);
         }
 
         private void doWsData(
@@ -768,6 +776,7 @@ public final class ServerStreamFactory implements StreamFactory
             final int capacity = payload.sizeof();
             final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                       .streamId(streamId)
+                                      .trace(connectTraceId)
                                       .groupId(0)
                                       .padding(connectPadding)
                                       .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskKey)))
@@ -823,7 +832,7 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(connectReplyThrottle, connectReplyId);
+                doReset(connectReplyThrottle, connectReplyId, 0L);
             }
         }
 
@@ -848,7 +857,7 @@ public final class ServerStreamFactory implements StreamFactory
                 handleAbort(abort);
                 break;
             default:
-                doReset(connectReplyThrottle, connectReplyId);
+                doReset(connectReplyThrottle, connectReplyId, 0L);
                 break;
             }
         }
@@ -881,7 +890,7 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(connectReplyThrottle, connectReplyId);
+                doReset(connectReplyThrottle, connectReplyId, 0L);
             }
         }
 
@@ -892,7 +901,7 @@ public final class ServerStreamFactory implements StreamFactory
 
             if (connectReplyBudget < 0)
             {
-                doReset(connectReplyThrottle, connectReplyId);
+                doReset(connectReplyThrottle, connectReplyId, 0L);
             }
             else
             {
@@ -986,14 +995,16 @@ public final class ServerStreamFactory implements StreamFactory
             {
                 connectReplyBudget += connectReplyCredit;
                 int connectReplyPadding = acceptReplyPadding + MAXIMUM_HEADER_SIZE;
-                doWindow(connectReplyThrottle, connectReplyId, connectReplyCredit, connectReplyPadding);
+                final long connectTraceId = window.trace();
+                doWindow(connectReplyThrottle, connectReplyId, connectTraceId, connectReplyCredit, connectReplyPadding);
             }
         }
 
         private void handleReset(
             ResetFW reset)
         {
-            doReset(connectReplyThrottle, connectReplyId);
+            final long connectReplyTraceId = reset.trace();
+            doReset(connectReplyThrottle, connectReplyId, connectReplyTraceId);
         }
 
         private int doHttpData(
@@ -1100,10 +1111,12 @@ public final class ServerStreamFactory implements StreamFactory
         long streamId,
         long streamRef,
         long correlationId,
+        long traceId,
         String protocol)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(streamId)
+                                     .trace(traceId)
                                      .source("ws")
                                      .sourceRef(streamRef)
                                      .correlationId(correlationId)
@@ -1128,12 +1141,14 @@ public final class ServerStreamFactory implements StreamFactory
     private void doWsAbort(
         MessageConsumer stream,
         long streamId,
+        long traceId,
         short code)
     {
         // TODO: WsAbortEx
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .streamId(streamId)
-                .build();
+                                     .trace(traceId)
+                                     .streamId(streamId)
+                                     .build();
 
         stream.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
     }
@@ -1141,10 +1156,12 @@ public final class ServerStreamFactory implements StreamFactory
     private void doWsEnd(
         MessageConsumer stream,
         long streamId,
+        long traceId,
         short code)
     {
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                .streamId(streamId)
+                               .trace(traceId)
                                .extension(e -> e.set(visitWsEndEx(code)))
                                .build();
 
@@ -1176,11 +1193,13 @@ public final class ServerStreamFactory implements StreamFactory
     private void doWindow(
         final MessageConsumer throttle,
         final long throttleId,
+        final long traceId,
         final int credit,
         final int padding)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(throttleId)
+                .trace(traceId)
                 .credit(credit)
                 .padding(padding)
                 .groupId(0)
@@ -1191,10 +1210,12 @@ public final class ServerStreamFactory implements StreamFactory
 
     private void doReset(
         final MessageConsumer throttle,
-        final long throttleId)
+        final long throttleId,
+        final long traceId)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .streamId(throttleId)
+               .trace(traceId)
                .build();
 
         throttle.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());

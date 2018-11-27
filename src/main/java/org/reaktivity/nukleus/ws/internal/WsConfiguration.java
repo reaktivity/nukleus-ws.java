@@ -15,31 +15,21 @@
  */
 package org.reaktivity.nukleus.ws.internal;
 
-import static org.reaktivity.nukleus.route.RouteKind.SERVER;
-
 import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.Nukleus;
-import org.reaktivity.nukleus.NukleusBuilder;
-import org.reaktivity.nukleus.NukleusFactorySpi;
-import org.reaktivity.nukleus.ws.internal.stream.ServerStreamFactoryBuilder;
 
-public final class WsNukleusFactorySpi implements NukleusFactorySpi
+public class WsConfiguration extends Configuration
 {
-    @Override
-    public String name()
+    private static final ConfigurationDef WS_CONFIG;
+
+    static
     {
-        return "ws";
+        final ConfigurationDef config = new ConfigurationDef("nukleus.ws");
+        WS_CONFIG = config;
     }
 
-    @Override
-    public Nukleus create(
-        Configuration config,
-        NukleusBuilder builder)
+    public WsConfiguration(
+        Configuration config)
     {
-        WsConfiguration wsConfig = new WsConfiguration(config);
-
-        return builder.configure(wsConfig)
-                      .streamFactory(SERVER, new ServerStreamFactoryBuilder(config))
-                      .build();
+        super(WS_CONFIG, config);
     }
 }

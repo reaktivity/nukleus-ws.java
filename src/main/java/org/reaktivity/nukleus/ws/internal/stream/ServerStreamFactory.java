@@ -1146,8 +1146,8 @@ public final class ServerStreamFactory implements StreamFactory
     {
         // TODO: WsAbortEx
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                                     .trace(traceId)
                                      .streamId(streamId)
+                                     .trace(traceId)
                                      .build();
 
         stream.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());

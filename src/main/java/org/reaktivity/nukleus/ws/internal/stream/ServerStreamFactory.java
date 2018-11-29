@@ -114,6 +114,7 @@ public final class ServerStreamFactory implements StreamFactory
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final LongSupplier supplyStreamId;
+    private final LongSupplier supplyTraceId;
     private final LongSupplier supplyCorrelationId;
 
     private final Long2ObjectHashMap<ServerHandshake> correlations;
@@ -125,12 +126,14 @@ public final class ServerStreamFactory implements StreamFactory
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
         LongSupplier supplyStreamId,
+        LongSupplier supplyTraceId,
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<ServerHandshake> correlations)
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.supplyStreamId = requireNonNull(supplyStreamId);
+        this.supplyTraceId = requireNonNull(supplyTraceId);
         this.supplyCorrelationId = requireNonNull(supplyCorrelationId);
         this.correlations = requireNonNull(correlations);
         this.wrapRoute = this::wrapRoute;
@@ -209,6 +212,7 @@ public final class ServerStreamFactory implements StreamFactory
 
     private final class ServerAcceptStream
     {
+        private static final String WEBSOCKET_UPGRADE = "websocket";
         private final MessageConsumer acceptThrottle;
         private final long acceptId;
 
@@ -319,12 +323,26 @@ public final class ServerStreamFactory implements StreamFactory
                 headers.merge(name, value, (v1, v2) -> String.format("%s, %s", v1, v2));
             });
 
+            final String upgrade = headers.get("upgrade");
             final String version = headers.get("sec-websocket-version");
             final String key = headers.get("sec-websocket-key");
             final String protocols = headers.get("sec-websocket-protocol");
             // TODO: need lightweight approach (end)
 
-            if (key != null && WEBSOCKET_VERSION_13.equals(version))
+            if (upgrade == null)
+            {
+                final String acceptReplyName = acceptName;
+                final MessageConsumer newAcceptReply = router.supplyTarget(acceptReplyName);
+                final long newAcceptReplyId = supplyStreamId.getAsLong();
+                doHttpBegin(newAcceptReply, newAcceptReplyId, 0L, correlationId, supplyTraceId.getAsLong(),
+                        hs -> hs.item(h -> h.name(":status").value("400"))
+                                .item(h -> h.name("connection").value("close")));
+                doHttpEnd(newAcceptReply, newAcceptReplyId, supplyTraceId.getAsLong());
+                this.streamState = (t, b, o, l) -> {};
+            }
+            else if (key != null &&
+                    WEBSOCKET_UPGRADE.equalsIgnoreCase(upgrade) &&
+                    WEBSOCKET_VERSION_13.equals(version))
             {
                 final MessagePredicate filter = (t, b, o, l) ->
                 {
@@ -367,6 +385,8 @@ public final class ServerStreamFactory implements StreamFactory
 
                     this.connectTarget = connectTarget;
                     this.connectId = newConnectId;
+
+                    this.streamState = this::afterBegin;
                 }
                 else
                 {
@@ -377,8 +397,6 @@ public final class ServerStreamFactory implements StreamFactory
             {
                 doReset(acceptThrottle, acceptId, 0L); // 404
             }
-
-            this.streamState = this::afterBegin;
         }
 
         private void handleData(
@@ -867,6 +885,7 @@ public final class ServerStreamFactory implements StreamFactory
         {
             final long connectRef = begin.sourceRef();
             final long correlationId = begin.correlationId();
+            final long traceId = begin.trace();
 
             final ServerHandshake handshake = correlations.remove(correlationId);
 
@@ -880,7 +899,8 @@ public final class ServerStreamFactory implements StreamFactory
                 String handshakeHash = handshake.handshakeHash();
                 String protocol = handshake.protocol();
 
-                doHttpBegin(newAcceptReply, newAcceptReplyId, 0L, newCorrelationId, setHttpHeaders(handshakeHash, protocol));
+                doHttpBegin(newAcceptReply, newAcceptReplyId, 0L, newCorrelationId, traceId,
+                        setHttpHeaders(handshakeHash, protocol));
                 router.setThrottle(acceptReplyName, newAcceptReplyId, this::handleThrottle);
 
                 this.acceptReply = newAcceptReply;
@@ -915,16 +935,18 @@ public final class ServerStreamFactory implements StreamFactory
                     flags = wsDataEx.flags();
                 }
 
-                doHttpData(acceptReply, acceptReplyId, acceptReplyPadding, payload, flags);
+                final long traceId = data.trace();
+                doHttpData(acceptReply, acceptReplyId, traceId, acceptReplyPadding, payload, flags);
             }
         }
 
         private void handleEnd(
             EndFW end)
         {
+            final long traceId = end.trace();
             payload.wrap(CLOSE_PAYLOAD, 0, 0);
-            doHttpData(acceptReply, acceptReplyId, acceptReplyPadding, payload, 0x88);
-            doHttpEnd(acceptReply, acceptReplyId);
+            doHttpData(acceptReply, acceptReplyId, traceId, acceptReplyPadding, payload, 0x88);
+            doHttpEnd(acceptReply, acceptReplyId, traceId);
         }
 
         private void handleAbort(
@@ -1010,6 +1032,7 @@ public final class ServerStreamFactory implements StreamFactory
         private int doHttpData(
                 MessageConsumer stream,
                 long targetId,
+                long traceId,
                 int padding,
                 OctetsFW payload,
                 int flagsAndOpcode)
@@ -1041,6 +1064,7 @@ public final class ServerStreamFactory implements StreamFactory
                 acceptReplyBudget -= payloadRemaining + acceptReplyPadding;
                 DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .streamId(targetId)
+                                     .trace(traceId)
                                      .groupId(0)
                                      .padding(padding)
                                      .payload(
@@ -1059,10 +1083,12 @@ public final class ServerStreamFactory implements StreamFactory
         long targetId,
         long targetRef,
         long correlationId,
+        long traceId,
         Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
     {
         BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .trace(traceId)
                 .source("ws")
                 .sourceRef(targetRef)
                 .correlationId(correlationId)
@@ -1086,10 +1112,12 @@ public final class ServerStreamFactory implements StreamFactory
 
     private void doHttpEnd(
         MessageConsumer stream,
-        long streamId)
+        long streamId,
+        long traceId)
     {
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                .streamId(streamId)
+                               .trace(traceId)
                                .build();
 
         stream.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());

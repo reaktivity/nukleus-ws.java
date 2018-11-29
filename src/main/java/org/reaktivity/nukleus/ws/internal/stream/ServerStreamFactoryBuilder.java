@@ -36,6 +36,7 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
     private LongSupplier supplyStreamId;
+    private LongSupplier supplyTraceId;
     private LongSupplier supplyCorrelationId;
     private Supplier<BufferPool> supplyBufferPool;
 
@@ -101,11 +102,19 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
+    public StreamFactoryBuilder setTraceSupplier(
+        LongSupplier supplyTraceId)
+    {
+        this.supplyTraceId = supplyTraceId;
+        return this;
+    }
+
+    @Override
     public StreamFactory build()
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
         return new ServerStreamFactory(config, router, writeBuffer,
-                bufferPool, supplyStreamId, supplyCorrelationId, correlations);
+                bufferPool, supplyStreamId, supplyTraceId, supplyCorrelationId, correlations);
     }
 }

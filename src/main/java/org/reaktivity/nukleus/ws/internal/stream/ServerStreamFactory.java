@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
+import java.util.function.LongUnaryOperator;
 
 import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
@@ -113,7 +114,8 @@ public final class ServerStreamFactory implements StreamFactory
 
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
-    private final LongSupplier supplyStreamId;
+    private final LongSupplier supplyInitialId;
+    private final LongUnaryOperator supplyReplyId;
     private final LongSupplier supplyTraceId;
     private final LongSupplier supplyCorrelationId;
 
@@ -125,14 +127,16 @@ public final class ServerStreamFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
-        LongSupplier supplyStreamId,
+        LongSupplier supplyInitialId,
+        LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<ServerHandshake> correlations)
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
-        this.supplyStreamId = requireNonNull(supplyStreamId);
+        this.supplyInitialId = requireNonNull(supplyInitialId);
+        this.supplyReplyId = requireNonNull(supplyReplyId);
         this.supplyTraceId = requireNonNull(supplyTraceId);
         this.supplyCorrelationId = requireNonNull(supplyCorrelationId);
         this.correlations = requireNonNull(correlations);
@@ -308,6 +312,7 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleBegin(
             BeginFW begin)
         {
+            final long acceptId = begin.streamId();
             final String acceptName = begin.source().asString();
             final long acceptRef = begin.sourceRef();
             final long correlationId = begin.correlationId();
@@ -333,7 +338,7 @@ public final class ServerStreamFactory implements StreamFactory
             {
                 final String acceptReplyName = acceptName;
                 final MessageConsumer newAcceptReply = router.supplyTarget(acceptReplyName);
-                final long newAcceptReplyId = supplyStreamId.getAsLong();
+                final long newAcceptReplyId = supplyReplyId.applyAsLong(acceptId);
                 doHttpBegin(newAcceptReply, newAcceptReplyId, 0L, correlationId, supplyTraceId.getAsLong(),
                         hs -> hs.item(h -> h.name(":status").value("400"))
                                 .item(h -> h.name("connection").value("close")));
@@ -371,12 +376,12 @@ public final class ServerStreamFactory implements StreamFactory
                     final String connectName = route.target().asString();
                     final MessageConsumer connectTarget = router.supplyTarget(connectName);
                     final long connectRef = route.targetRef();
-                    final long newConnectId = supplyStreamId.getAsLong();
+                    final long newConnectId = supplyInitialId.getAsLong();
                     final long newCorrelationId = supplyCorrelationId.getAsLong();
                     final String protocol = resolveProtocol(protocols, wsRouteEx.protocol().asString());
 
                     final ServerHandshake handshake =
-                            new ServerHandshake(acceptName, correlationId, handshakeHash, protocol);
+                            new ServerHandshake(acceptId, acceptName, correlationId, handshakeHash, protocol);
 
                     correlations.put(newCorrelationId, handshake);
 
@@ -894,7 +899,7 @@ public final class ServerStreamFactory implements StreamFactory
                 final String acceptReplyName = handshake.acceptName();
 
                 final MessageConsumer newAcceptReply = router.supplyTarget(acceptReplyName);
-                final long newAcceptReplyId = supplyStreamId.getAsLong();
+                final long newAcceptReplyId = supplyReplyId.applyAsLong(handshake.acceptId());
                 final long newCorrelationId = handshake.correlationId();
                 String handshakeHash = handshake.handshakeHash();
                 String protocol = handshake.protocol();

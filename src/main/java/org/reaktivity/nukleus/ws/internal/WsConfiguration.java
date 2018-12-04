@@ -13,31 +13,23 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal.util.function;
+package org.reaktivity.nukleus.ws.internal;
 
-import java.util.Objects;
-import java.util.function.BiConsumer;
+import org.reaktivity.nukleus.Configuration;
 
-@FunctionalInterface
-public interface LongObjectBiConsumer<T> extends BiConsumer<Long, T>
+public class WsConfiguration extends Configuration
 {
-    void accept(long value, T t);
+    private static final ConfigurationDef WS_CONFIG;
 
-    @Override
-    default void accept(Long value, T t)
+    static
     {
-        this.accept(value.longValue(), t);
+        final ConfigurationDef config = new ConfigurationDef("nukleus.ws");
+        WS_CONFIG = config;
     }
 
-    default LongObjectBiConsumer<T> andThen(
-        LongObjectBiConsumer<? super T> after)
+    public WsConfiguration(
+        Configuration config)
     {
-        Objects.requireNonNull(after);
-
-        return (l, r) ->
-        {
-            accept(l, r);
-            after.accept(l, r);
-        };
+        super(WS_CONFIG, config);
     }
 }

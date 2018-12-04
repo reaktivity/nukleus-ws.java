@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2017 The Reaktivity Project
+ * Copyright 2016-2018 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.ws.internal.stream;
 import java.util.function.IntUnaryOperator;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 
 import org.agrona.MutableDirectBuffer;
@@ -35,7 +36,9 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
-    private LongSupplier supplyStreamId;
+    private LongSupplier supplyInitialId;
+    private LongUnaryOperator supplyReplyId;
+    private LongSupplier supplyTraceId;
     private LongSupplier supplyCorrelationId;
     private Supplier<BufferPool> supplyBufferPool;
 
@@ -63,10 +66,18 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ServerStreamFactoryBuilder setStreamIdSupplier(
-        LongSupplier supplyStreamId)
+    public ServerStreamFactoryBuilder setInitialIdSupplier(
+        LongSupplier supplyInitialId)
     {
-        this.supplyStreamId = supplyStreamId;
+        this.supplyInitialId = supplyInitialId;
+        return this;
+    }
+
+    @Override
+    public StreamFactoryBuilder setReplyIdSupplier(
+        LongUnaryOperator supplyReplyId)
+    {
+        this.supplyReplyId = supplyReplyId;
         return this;
     }
 
@@ -85,7 +96,7 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ServerStreamFactoryBuilder setCorrelationIdSupplier(
+    public ServerStreamFactoryBuilder setTargetCorrelationIdSupplier(
         LongSupplier supplyCorrelationId)
     {
         this.supplyCorrelationId = supplyCorrelationId;
@@ -101,11 +112,19 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
+    public StreamFactoryBuilder setTraceSupplier(
+        LongSupplier supplyTraceId)
+    {
+        this.supplyTraceId = supplyTraceId;
+        return this;
+    }
+
+    @Override
     public StreamFactory build()
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
         return new ServerStreamFactory(config, router, writeBuffer,
-                bufferPool, supplyStreamId, supplyCorrelationId, correlations);
+                bufferPool, supplyInitialId, supplyReplyId, supplyTraceId, supplyCorrelationId, correlations);
     }
 }

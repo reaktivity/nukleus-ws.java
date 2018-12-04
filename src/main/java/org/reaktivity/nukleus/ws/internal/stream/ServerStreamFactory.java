@@ -170,7 +170,7 @@ public final class ServerStreamFactory implements StreamFactory
 
         final MessagePredicate filter = (t, b, o, l) ->
         {
-            final RouteFW route = routeRO.wrap(b, o, l);
+            final RouteFW route = routeRO.wrap(b, o, o + l);
             return acceptRef == route.sourceRef() &&
                     acceptName.equals(route.source().asString());
         };
@@ -327,7 +327,7 @@ public final class ServerStreamFactory implements StreamFactory
             {
                 final MessagePredicate filter = (t, b, o, l) ->
                 {
-                    final RouteFW route = routeRO.wrap(b, o, l);
+                    final RouteFW route = routeRO.wrap(b, o, o + l);
                     final WsRouteExFW routeEx = route.extension().get(wsRouteExRO::wrap);
                     final String protocol = routeEx.protocol().asString();
 

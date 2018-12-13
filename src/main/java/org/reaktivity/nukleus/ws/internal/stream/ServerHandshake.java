@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.ws.internal.stream;
 
 public final class ServerHandshake
 {
+    private final long acceptRouteId;
     private final long acceptId;
     private final String acceptName;
     private final long correlationId;
@@ -24,17 +25,24 @@ public final class ServerHandshake
     private final String protocol;
 
     public ServerHandshake(
+        long acceptRouteId,
         long acceptId,
         String acceptName,
         long correlationId,
         String handshakeHash,
         String protocol)
     {
+        this.acceptRouteId = acceptRouteId;
         this.acceptId = acceptId;
         this.acceptName = acceptName;
         this.correlationId = correlationId;
         this.handshakeHash = handshakeHash;
         this.protocol = protocol;
+    }
+
+    public long acceptRouteId()
+    {
+        return acceptRouteId;
     }
 
     public long acceptId()

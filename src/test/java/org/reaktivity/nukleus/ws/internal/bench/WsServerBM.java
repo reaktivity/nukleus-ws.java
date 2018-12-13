@@ -115,10 +115,11 @@ public class WsServerBM
         this.source = controller.supplySource("source", Source::new);
         this.target = controller.supplyTarget("target", Target::new);
 
+        final long sourceRouteId = random.nextLong();
         final long sourceId = random.nextLong();
         final long correlationId = random.nextLong();
 
-        source.reinit(sourceRef, sourceId, correlationId);
+        source.reinit(sourceRouteId, sourceRef, sourceId, correlationId);
         target.reinit();
 
         source.doBegin();
@@ -176,6 +177,7 @@ public class WsServerBM
         }
 
         private void reinit(
+            long sourceRouteId,
             long sourceRef,
             long sourceId,
             long correlationId)
@@ -197,6 +199,7 @@ public class WsServerBM
 
             // TODO: move to doBegin to avoid writeBuffer overwrite with DataFW
             this.begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .routeId(sourceRouteId)
                     .streamId(sourceId)
                     .sourceRef(sourceRef)
                     .correlationId(correlationId)
@@ -226,6 +229,7 @@ public class WsServerBM
             sendArray[17] = (byte) (charBytes[11] ^ sendArray[5]);
 
             this.data = dataRW.wrap(writeBuffer, this.begin.limit(), writeBuffer.capacity())
+                              .routeId(sourceRouteId)
                               .streamId(sourceId)
                               .payload(p -> p.set(sendArray))
                               .extension(e -> e.reset())
@@ -297,7 +301,8 @@ public class WsServerBM
         {
             final BeginFW begin = beginRO.wrap(buffer, index, index + length);
             final long streamId = begin.streamId();
-            doWindow(streamId, 8192);
+            final long routeId = begin.routeId();
+            doWindow(streamId, routeId, 8192);
 
             this.readHandler = this::afterBegin;
         }
@@ -309,18 +314,21 @@ public class WsServerBM
             int length)
         {
             final DataFW data = dataRO.wrap(buffer, index, index + length);
+            final long routeId = data.routeId();
             final long streamId = data.streamId();
             final OctetsFW payload = data.payload();
 
             final int update = payload.sizeof();
-            doWindow(streamId, update);
+            doWindow(streamId, routeId, update);
         }
 
         private boolean doWindow(
+            final long routeId,
             final long streamId,
             final int credit)
         {
             final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .routeId(routeId)
                     .streamId(streamId)
                     .credit(credit)
                     .padding(0)

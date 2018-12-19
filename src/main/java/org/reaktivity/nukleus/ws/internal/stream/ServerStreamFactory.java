@@ -286,7 +286,7 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(acceptThrottle, acceptRouteId, acceptId, 0L);
+                doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong());
             }
         }
 
@@ -311,7 +311,7 @@ public final class ServerStreamFactory implements StreamFactory
                 handleAbort(abort);
                 break;
             default:
-                doReset(acceptThrottle, acceptRouteId, acceptId, 0L);
+                doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong());
                 break;
             }
         }
@@ -404,12 +404,12 @@ public final class ServerStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    doReset(acceptThrottle, acceptRouteId, acceptId, 0L); // 400
+                    doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong()); // 400
                 }
             }
             else
             {
-                doReset(acceptThrottle, acceptRouteId, acceptId, 0L); // 404
+                doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong()); // 404
             }
         }
 
@@ -574,7 +574,7 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(acceptThrottle, acceptRouteId, acceptId, 0L);
+                doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong());
                 doWsAbort(connectTarget, connectRouteId, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
             }
 
@@ -678,7 +678,7 @@ public final class ServerStreamFactory implements StreamFactory
         {
             if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
             {
-                doReset(acceptThrottle, acceptRouteId, acceptId, 0L);
+                doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong());
                 doWsAbort(connectTarget, connectRouteId, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
                 return length;
             }
@@ -718,7 +718,7 @@ public final class ServerStreamFactory implements StreamFactory
         {
             if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
             {
-                doReset(acceptThrottle, acceptRouteId, acceptId, 0L);
+                doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong());
                 doWsAbort(connectTarget, connectRouteId, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
                 return length;
             }
@@ -745,7 +745,7 @@ public final class ServerStreamFactory implements StreamFactory
             final int offset,
             final int length)
         {
-            doReset(acceptThrottle, acceptRouteId, acceptId, 0L);
+            doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong());
             doWsAbort(connectTarget, connectRouteId, connectId, connectTraceId, STATUS_PROTOCOL_ERROR);
             return length;
         }
@@ -870,7 +870,7 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(connectReplyThrottle, connectRouteId, connectReplyId, 0L);
+                doReset(connectReplyThrottle, connectRouteId, connectReplyId, supplyTraceId.getAsLong());
             }
         }
 
@@ -895,7 +895,7 @@ public final class ServerStreamFactory implements StreamFactory
                 handleAbort(abort);
                 break;
             default:
-                doReset(connectReplyThrottle, connectRouteId, connectReplyId, 0L);
+                doReset(connectReplyThrottle, connectRouteId, connectReplyId, supplyTraceId.getAsLong());
                 break;
             }
         }
@@ -932,7 +932,7 @@ public final class ServerStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(connectReplyThrottle, connectRouteId, connectReplyId, 0L);
+                doReset(connectReplyThrottle, connectRouteId, connectReplyId, supplyTraceId.getAsLong());
             }
         }
 
@@ -943,7 +943,7 @@ public final class ServerStreamFactory implements StreamFactory
 
             if (connectReplyBudget < 0)
             {
-                doReset(connectReplyThrottle, connectRouteId, connectReplyId, 0L);
+                doReset(connectReplyThrottle, connectRouteId, connectReplyId, supplyTraceId.getAsLong());
             }
             else
             {

@@ -420,7 +420,7 @@ public final class ServerStreamFactory implements StreamFactory
 
             if (acceptBudget < 0)
             {
-                doReset(acceptThrottle, acceptRouteId, acceptId, 0L);
+                doReset(acceptThrottle, acceptRouteId, acceptId, supplyTraceId.getAsLong());
             }
             else
             {

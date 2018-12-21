@@ -80,13 +80,6 @@ public final class WsController implements Controller
         return "ws";
     }
 
-    public <T> T supplySource(
-        String source,
-        BiFunction<MessagePredicate, ToIntFunction<MessageConsumer>, T> factory)
-    {
-        return controllerSpi.doSupplySource(source, factory);
-    }
-
     public <T> T supplyTarget(
         String target,
         BiFunction<ToIntFunction<MessageConsumer>, MessagePredicate, T> factory)
@@ -95,21 +88,18 @@ public final class WsController implements Controller
     }
 
     public CompletableFuture<Long> routeServer(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
+        String localAddress,
+        String remoteAddress,
         String protocol)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
         RouteFW route = routeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .correlationId(correlationId)
+                .nukleus(name())
                 .role(b -> b.set(Role.SERVER))
-                .source(source)
-                .sourceRef(sourceRef)
-                .target(target)
-                .targetRef(targetRef)
+                .localAddress(localAddress)
+                .remoteAddress(remoteAddress)
                 .extension(b -> b.set(visitRouteEx(protocol)))
                 .build();
 
@@ -117,66 +107,33 @@ public final class WsController implements Controller
     }
 
     public CompletableFuture<Long> routeClient(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
+        String localAddress,
+        String remoteAddress,
         String protocol)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
         RouteFW route = routeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .correlationId(correlationId)
+                .nukleus(name())
                 .role(b -> b.set(Role.CLIENT))
-                .source(source)
-                .sourceRef(sourceRef)
-                .target(target)
-                .targetRef(targetRef)
+                .localAddress(localAddress)
+                .remoteAddress(remoteAddress)
                 .extension(b -> b.set(visitRouteEx(protocol)))
                 .build();
 
         return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
     }
 
-    public CompletableFuture<Void> unrouteServer(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
+    public CompletableFuture<Void> unroute(
+        long routeId)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
         UnrouteFW unroute = unrouteRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .correlationId(correlationId)
-                                     .role(b -> b.set(Role.SERVER))
-                                     .source(source)
-                                     .sourceRef(sourceRef)
-                                     .target(target)
-                                     .targetRef(targetRef)
-                                     .extension(b -> b.set(visitRouteEx(protocol)))
-                                     .build();
-
-        return controllerSpi.doUnroute(unroute.typeId(), unroute.buffer(), unroute.offset(), unroute.sizeof());
-    }
-
-    public CompletableFuture<Void> unrouteClient(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String protocol)
-    {
-        long correlationId = controllerSpi.nextCorrelationId();
-
-        UnrouteFW unroute = unrouteRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                                     .correlationId(correlationId)
-                                     .role(b -> b.set(Role.CLIENT))
-                                     .source(source)
-                                     .sourceRef(sourceRef)
-                                     .target(target)
-                                     .targetRef(targetRef)
-                                     .extension(b -> b.set(visitRouteEx(protocol)))
+                                     .nukleus(name())
+                                     .routeId(routeId)
                                      .build();
 
         return controllerSpi.doUnroute(unroute.typeId(), unroute.buffer(), unroute.offset(), unroute.sizeof());
@@ -188,6 +145,7 @@ public final class WsController implements Controller
 
         FreezeFW freeze = freezeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                   .correlationId(correlationId)
+                                  .nukleus(name())
                                   .build();
 
         return controllerSpi.doFreeze(freeze.typeId(), freeze.buffer(), freeze.offset(), freeze.sizeof());

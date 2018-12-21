@@ -19,7 +19,6 @@ public final class ServerHandshake
 {
     private final long acceptRouteId;
     private final long acceptId;
-    private final String acceptName;
     private final long correlationId;
     private final String handshakeHash;
     private final String protocol;
@@ -27,14 +26,12 @@ public final class ServerHandshake
     public ServerHandshake(
         long acceptRouteId,
         long acceptId,
-        String acceptName,
         long correlationId,
         String handshakeHash,
         String protocol)
     {
         this.acceptRouteId = acceptRouteId;
         this.acceptId = acceptId;
-        this.acceptName = acceptName;
         this.correlationId = correlationId;
         this.handshakeHash = handshakeHash;
         this.protocol = protocol;
@@ -48,11 +45,6 @@ public final class ServerHandshake
     public long acceptId()
     {
         return acceptId;
-    }
-
-    public String acceptName()
-    {
-        return acceptName;
     }
 
     public long correlationId()

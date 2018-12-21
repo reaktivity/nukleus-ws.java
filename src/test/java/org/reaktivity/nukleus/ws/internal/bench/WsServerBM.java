@@ -99,8 +99,7 @@ public class WsServerBM
     private Source source;
     private Target target;
 
-    private long sourceRef;
-    private long targetRef;
+    private long routeId;
 
     @Setup(Level.Trial)
     public void reinit() throws Exception
@@ -109,17 +108,16 @@ public class WsServerBM
 
         final Random random = new Random();
 
-        this.targetRef = random.nextLong();
-        this.sourceRef = controller.routeServer("source", 0L, "target", targetRef, null).get();
+        this.routeId = controller.routeServer("ws#0", "target#0", null).get();
 
-        this.source = controller.supplySource("source", Source::new);
+//        this.source = controller.supplySource("source", Source::new);
         this.target = controller.supplyTarget("target", Target::new);
 
         final long sourceRouteId = random.nextLong();
         final long sourceId = random.nextLong();
         final long correlationId = random.nextLong();
 
-        source.reinit(sourceRouteId, sourceRef, sourceId, correlationId);
+        source.reinit(sourceRouteId, routeId, sourceId, correlationId);
         target.reinit();
 
         source.doBegin();
@@ -130,7 +128,7 @@ public class WsServerBM
     {
         WsController controller = reaktor.controller(WsController.class);
 
-        controller.unrouteServer("source", sourceRef, "target", targetRef, null).get();
+        controller.unroute(routeId).get();
 
         this.source = null;
         this.target = null;
@@ -201,7 +199,6 @@ public class WsServerBM
             this.begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(sourceRouteId)
                     .streamId(sourceId)
-                    .sourceRef(sourceRef)
                     .correlationId(correlationId)
                     .extension(e -> e.set(visitHttpBeginEx(headers)))
                     .build();

@@ -152,17 +152,17 @@ public final class ServerStreamFactory implements StreamFactory
         MessageConsumer throttle)
     {
         final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-        final long sourceRef = begin.sourceRef();
+        final long streamId = begin.streamId();
 
         MessageConsumer newStream = null;
 
-        if (sourceRef == 0L)
+        if ((streamId & 0x8000_0000_0000_0000L) == 0L)
         {
-            newStream = newConnectReplyStream(begin, throttle);
+            newStream = newAcceptStream(begin, throttle);
         }
         else
         {
-            newStream = newAcceptStream(begin, throttle);
+            newStream = newConnectReplyStream(begin, throttle);
         }
 
         return newStream;
@@ -173,17 +173,9 @@ public final class ServerStreamFactory implements StreamFactory
         final MessageConsumer acceptThrottle)
     {
         final long acceptRouteId = begin.routeId();
-        final long acceptRef = begin.sourceRef();
-        final String acceptName = begin.source().asString();
 
-        final MessagePredicate filter = (t, b, o, l) ->
-        {
-            final RouteFW route = routeRO.wrap(b, o, o + l);
-            return acceptRef == route.sourceRef() &&
-                    acceptName.equals(route.source().asString());
-        };
-
-        final RouteFW route = router.resolve(begin.authorization(), filter, this::wrapRoute);
+        final MessagePredicate filter = (t, b, o, l) -> true;
+        final RouteFW route = router.resolve(acceptRouteId, begin.authorization(), filter, this::wrapRoute);
 
         MessageConsumer newStream = null;
 
@@ -191,7 +183,7 @@ public final class ServerStreamFactory implements StreamFactory
         {
             final long acceptId = begin.streamId();
 
-            newStream = new ServerAcceptStream(acceptThrottle, acceptRouteId, acceptId, acceptRef)::handleStream;
+            newStream = new ServerAcceptStream(acceptThrottle, acceptRouteId, acceptId)::handleStream;
         }
 
         return newStream;
@@ -250,8 +242,7 @@ public final class ServerStreamFactory implements StreamFactory
         private ServerAcceptStream(
             MessageConsumer acceptThrottle,
             long acceptRouteId,
-            long acceptId,
-            long acceptRef)
+            long acceptId)
         {
             this.acceptThrottle = acceptThrottle;
             this.acceptRouteId = acceptRouteId;
@@ -320,8 +311,6 @@ public final class ServerStreamFactory implements StreamFactory
             BeginFW begin)
         {
             final long acceptId = begin.streamId();
-            final String acceptName = begin.source().asString();
-            final long acceptRef = begin.sourceRef();
             final long correlationId = begin.correlationId();
             final OctetsFW extension = begin.extension();
 
@@ -343,10 +332,9 @@ public final class ServerStreamFactory implements StreamFactory
 
             if (upgrade == null)
             {
-                final String acceptReplyName = acceptName;
-                final MessageConsumer newAcceptReply = router.supplyTarget(acceptReplyName);
+                final MessageConsumer newAcceptReply = router.supplySender(acceptRouteId);
                 final long newAcceptReplyId = supplyReplyId.applyAsLong(acceptId);
-                doHttpBegin(newAcceptReply, acceptRouteId, newAcceptReplyId, 0L, correlationId, supplyTraceId.getAsLong(),
+                doHttpBegin(newAcceptReply, acceptRouteId, newAcceptReplyId, correlationId, supplyTraceId.getAsLong(),
                         hs -> hs.item(h -> h.name(":status").value("400"))
                                 .item(h -> h.name("connection").value("close")));
                 doHttpEnd(newAcceptReply, acceptRouteId, newAcceptReplyId, supplyTraceId.getAsLong());
@@ -362,12 +350,10 @@ public final class ServerStreamFactory implements StreamFactory
                     final WsRouteExFW routeEx = route.extension().get(wsRouteExRO::wrap);
                     final String protocol = routeEx.protocol().asString();
 
-                    return acceptRef == route.sourceRef() &&
-                            acceptName.equals(route.source().asString()) &&
-                            (protocols == null || protocols.contains(protocol));
+                    return protocols == null || protocols.contains(protocol);
                 };
 
-                final RouteFW route = router.resolve(begin.authorization(), filter, wrapRoute);
+                final RouteFW route = router.resolve(acceptRouteId, begin.authorization(), filter, wrapRoute);
 
                 if (route != null)
                 {
@@ -381,20 +367,18 @@ public final class ServerStreamFactory implements StreamFactory
                     final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
 
                     final long connectRouteId = route.correlationId();
-                    final String connectName = route.target().asString();
-                    final MessageConsumer connectTarget = router.supplyTarget(connectName);
-                    final long connectRef = route.targetRef();
+                    final MessageConsumer connectTarget = router.supplyReceiver(connectRouteId);
                     final long newConnectId = supplyInitialId.getAsLong();
                     final long newCorrelationId = supplyCorrelationId.getAsLong();
                     final String protocol = resolveProtocol(protocols, wsRouteEx.protocol().asString());
 
                     final ServerHandshake handshake =
-                            new ServerHandshake(acceptRouteId, acceptId, acceptName, correlationId, handshakeHash, protocol);
+                            new ServerHandshake(acceptRouteId, acceptId, correlationId, handshakeHash, protocol);
 
                     correlations.put(newCorrelationId, handshake);
 
-                    doWsBegin(connectTarget, connectRouteId, newConnectId, connectRef, newCorrelationId, traceId, protocol);
-                    router.setThrottle(connectName, newConnectId, this::handleThrottle);
+                    doWsBegin(connectTarget, connectRouteId, newConnectId, newCorrelationId, traceId, protocol);
+                    router.setThrottle(newConnectId, this::handleThrottle);
 
                     this.connectTarget = connectTarget;
                     this.connectRouteId = connectRouteId;
@@ -903,26 +887,24 @@ public final class ServerStreamFactory implements StreamFactory
         private void handleBegin(
             BeginFW begin)
         {
-            final long connectRef = begin.sourceRef();
             final long correlationId = begin.correlationId();
             final long traceId = begin.trace();
 
             final ServerHandshake handshake = correlations.remove(correlationId);
 
-            if (connectRef == 0L && handshake != null)
+            if (handshake != null)
             {
                 final long acceptRouteId = handshake.acceptRouteId();
-                final String acceptReplyName = handshake.acceptName();
 
-                final MessageConsumer newAcceptReply = router.supplyTarget(acceptReplyName);
+                final MessageConsumer newAcceptReply = router.supplySender(acceptRouteId);
                 final long newAcceptReplyId = supplyReplyId.applyAsLong(handshake.acceptId());
                 final long newCorrelationId = handshake.correlationId();
                 String handshakeHash = handshake.handshakeHash();
                 String protocol = handshake.protocol();
 
-                doHttpBegin(newAcceptReply, acceptRouteId, newAcceptReplyId, 0L, newCorrelationId, traceId,
+                doHttpBegin(newAcceptReply, acceptRouteId, newAcceptReplyId, newCorrelationId, traceId,
                         setHttpHeaders(handshakeHash, protocol));
-                router.setThrottle(acceptReplyName, newAcceptReplyId, this::handleThrottle);
+                router.setThrottle(newAcceptReplyId, this::handleThrottle);
 
                 this.acceptReply = newAcceptReply;
                 this.acceptRouteId = acceptRouteId;
@@ -1108,7 +1090,6 @@ public final class ServerStreamFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
-        long targetRef,
         long correlationId,
         long traceId,
         Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
@@ -1117,8 +1098,6 @@ public final class ServerStreamFactory implements StreamFactory
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(traceId)
-                .source("ws")
-                .sourceRef(targetRef)
                 .correlationId(correlationId)
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();
@@ -1168,7 +1147,6 @@ public final class ServerStreamFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
-        long streamRef,
         long correlationId,
         long traceId,
         String protocol)
@@ -1177,8 +1155,6 @@ public final class ServerStreamFactory implements StreamFactory
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(traceId)
-                .source("ws")
-                .sourceRef(streamRef)
                 .correlationId(correlationId)
                 .extension(e -> e.set(visitWsBeginEx(protocol)))
                 .build();

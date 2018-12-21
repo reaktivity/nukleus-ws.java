@@ -18,8 +18,6 @@ package org.reaktivity.nukleus.ws.internal.control;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 
-import java.util.Random;
-
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -56,12 +54,10 @@ public class ControllerIT
     })
     public void shouldRouteServer() throws Exception
     {
-        long targetRef = new Random().nextLong();
-
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeServer("source", 0L, "target", targetRef, "primary")
+               .routeServer("ws#0", "target#0", "primary")
                .get();
 
         k3po.finish();
@@ -73,12 +69,10 @@ public class ControllerIT
     })
     public void shouldRouteClient() throws Exception
     {
-        long targetRef = new Random().nextLong();
-
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeClient("source", 0L, "target", targetRef, "primary")
+               .routeClient("ws#0", "target#0", "primary")
                .get();
 
         k3po.finish();
@@ -91,18 +85,16 @@ public class ControllerIT
     })
     public void shouldUnrouteServer() throws Exception
     {
-        long targetRef = new Random().nextLong();
-
         k3po.start();
 
-        long sourceRef = reaktor.controller(WsController.class)
-                  .routeServer("source", 0L, "target", targetRef, "primary")
+        long routeId = reaktor.controller(WsController.class)
+                  .routeServer("ws#0", "target#0", "primary")
                   .get();
 
         k3po.notifyBarrier("ROUTED_SERVER");
 
         reaktor.controller(WsController.class)
-               .unrouteServer("source", sourceRef, "target", targetRef, "primary")
+               .unroute(routeId)
                .get();
 
         k3po.finish();
@@ -115,18 +107,16 @@ public class ControllerIT
     })
     public void shouldUnrouteClient() throws Exception
     {
-        long targetRef = new Random().nextLong();
-
         k3po.start();
 
-        long sourceRef = reaktor.controller(WsController.class)
-                  .routeClient("source", 0L, "target", targetRef, "primary")
+        long routeId = reaktor.controller(WsController.class)
+                  .routeClient("ws#0", "target#0", "primary")
                   .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(WsController.class)
-               .unrouteClient("source", sourceRef, "target", targetRef, "primary")
+               .unroute(routeId)
                .get();
 
         k3po.finish();

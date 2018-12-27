@@ -15,11 +15,20 @@
  */
 package org.reaktivity.nukleus.ws.internal;
 
-import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.NukleusFactorySpi;
+import org.reaktivity.nukleus.Nukleus;
 
-public final class WsNukleusFactorySpi implements NukleusFactorySpi
+final class WsNukleus implements Nukleus
 {
+    static final String NAME = "ws";
+
+    private final WsConfiguration config;
+
+    WsNukleus(
+        WsConfiguration config)
+    {
+        this.config = config;
+    }
+
     @Override
     public String name()
     {
@@ -27,9 +36,14 @@ public final class WsNukleusFactorySpi implements NukleusFactorySpi
     }
 
     @Override
-    public WsNukleus create(
-        Configuration config)
+    public WsConfiguration config()
     {
-        return new WsNukleus(new WsConfiguration(config));
+        return config;
+    }
+
+    @Override
+    public WsElektron supplyElektron()
+    {
+        return new WsElektron(config);
     }
 }

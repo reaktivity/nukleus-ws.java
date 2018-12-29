@@ -22,35 +22,31 @@ import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 
 import org.agrona.MutableDirectBuffer;
-import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
-public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
+public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
 {
     private final Configuration config;
-    private final Long2ObjectHashMap<ServerHandshake> correlations;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
     private LongSupplier supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTraceId;
-    private LongSupplier supplyCorrelationId;
     private Supplier<BufferPool> supplyBufferPool;
 
-    public ServerStreamFactoryBuilder(
+    public WsServerStreamFactoryBuilder(
         Configuration config)
     {
         this.config = config;
-        this.correlations = new Long2ObjectHashMap<>();
     }
 
     @Override
-    public ServerStreamFactoryBuilder setRouteManager(
+    public WsServerStreamFactoryBuilder setRouteManager(
         RouteManager router)
     {
         this.router = router;
@@ -58,7 +54,7 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ServerStreamFactoryBuilder setWriteBuffer(
+    public WsServerStreamFactoryBuilder setWriteBuffer(
         MutableDirectBuffer writeBuffer)
     {
         this.writeBuffer = writeBuffer;
@@ -66,7 +62,7 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ServerStreamFactoryBuilder setInitialIdSupplier(
+    public WsServerStreamFactoryBuilder setInitialIdSupplier(
         LongSupplier supplyInitialId)
     {
         this.supplyInitialId = supplyInitialId;
@@ -82,24 +78,16 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ServerStreamFactoryBuilder setGroupBudgetClaimer(
+    public WsServerStreamFactoryBuilder setGroupBudgetClaimer(
         LongFunction<IntUnaryOperator> groupBudgetClaimer)
     {
         return this;
     }
 
     @Override
-    public ServerStreamFactoryBuilder setGroupBudgetReleaser(
+    public WsServerStreamFactoryBuilder setGroupBudgetReleaser(
         LongFunction<IntUnaryOperator> groupBudgetReleaser)
     {
-        return this;
-    }
-
-    @Override
-    public ServerStreamFactoryBuilder setTargetCorrelationIdSupplier(
-        LongSupplier supplyCorrelationId)
-    {
-        this.supplyCorrelationId = supplyCorrelationId;
         return this;
     }
 
@@ -124,7 +112,7 @@ public final class ServerStreamFactoryBuilder implements StreamFactoryBuilder
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
-        return new ServerStreamFactory(config, router, writeBuffer,
-                bufferPool, supplyInitialId, supplyReplyId, supplyTraceId, supplyCorrelationId, correlations);
+        return new WsServerStreamFactory(config, router, writeBuffer,
+                bufferPool, supplyInitialId, supplyReplyId, supplyTraceId);
     }
 }

@@ -21,7 +21,7 @@ import static java.nio.ByteOrder.nativeOrder;
 import org.agrona.BitUtil;
 import org.agrona.MutableDirectBuffer;
 
-public final class BufferUtil
+public final class WsMaskUtil
 {
     private static final int REMAINING_SHIFT_1ST_BYTE;
     private static final int REMAINING_SHIFT_1ST_SHORT;
@@ -43,7 +43,7 @@ public final class BufferUtil
         }
     }
 
-    private BufferUtil()
+    private WsMaskUtil()
     {
         // utility class, no instances
     }

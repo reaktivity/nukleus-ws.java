@@ -194,12 +194,11 @@ public final class WsServerStreamFactory implements StreamFactory
 
         if (upgrade == null)
         {
-            final MessageConsumer newAcceptReply = router.supplySender(acceptRouteId);
             final long newAcceptReplyId = supplyReplyId.applyAsLong(acceptInitialId);
-            doHttpBegin(newAcceptReply, acceptRouteId, newAcceptReplyId, acceptCorrelationId, supplyTraceId.getAsLong(),
+            doHttpBegin(acceptReply, acceptRouteId, newAcceptReplyId, acceptCorrelationId, supplyTraceId.getAsLong(),
                     hs -> hs.item(h -> h.name(":status").value("400"))
                             .item(h -> h.name("connection").value("close")));
-            doHttpEnd(newAcceptReply, acceptRouteId, newAcceptReplyId, supplyTraceId.getAsLong());
+            doHttpEnd(acceptReply, acceptRouteId, newAcceptReplyId, supplyTraceId.getAsLong());
             newStream = (t, b, o, l) -> {};
         }
         else if (key != null &&

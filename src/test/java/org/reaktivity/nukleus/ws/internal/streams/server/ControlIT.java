@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.ws.internal.streams.server;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -43,6 +44,7 @@ public class ControlIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
         .nukleus("ws"::equals)
+        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
     @Rule

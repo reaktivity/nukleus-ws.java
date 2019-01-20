@@ -26,6 +26,7 @@ import org.reaktivity.reaktor.test.ReaktorRule;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 /**
  * RFC-6455, section 5.2 "Base Framing Protocol"
@@ -45,6 +46,7 @@ public class FlowControlIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
         .nukleus("ws"::equals)
+        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
     @Rule

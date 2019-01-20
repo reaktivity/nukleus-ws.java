@@ -40,13 +40,13 @@ import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
+import org.reaktivity.nukleus.ws.internal.WsConfiguration;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.ListFW;
@@ -114,7 +114,7 @@ public final class WsServerStreamFactory implements StreamFactory
 
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
-    private final LongSupplier supplyInitialId;
+    private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongSupplier supplyTraceId;
 
@@ -122,11 +122,11 @@ public final class WsServerStreamFactory implements StreamFactory
     private final MessageFunction<RouteFW> wrapRoute;
 
     public WsServerStreamFactory(
-        Configuration config,
+        WsConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
-        LongSupplier supplyInitialId,
+        LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId)
     {
@@ -228,20 +228,20 @@ public final class WsServerStreamFactory implements StreamFactory
                 final String protocol = resolveProtocol(protocols, wsRouteEx.protocol().asString());
 
                 final long connectRouteId = route.correlationId();
-                final MessageConsumer connectInitial = router.supplyReceiver(connectRouteId);
-                final long connectInitialId = supplyInitialId.getAsLong();
-                final long connectReplyId = supplyReplyId.applyAsLong(connectInitialId);
+                final long connectInitialId = supplyInitialId.applyAsLong(connectRouteId);
+                final MessageConsumer connectInitial = router.supplyReceiver(connectInitialId);
 
                 final WsServerAcceptStream accept =
                         new WsServerAcceptStream(acceptReply, acceptRouteId, acceptInitialId, acceptCorrelationId,
                                 handshakeHash, protocol);
 
                 final WsServerConnectStream connect = new WsServerConnectStream(connectInitial, connectRouteId,
-                        connectInitialId, connectReplyId);
+                        connectInitialId);
 
                 accept.correlate(connect);
                 connect.correlate(accept);
 
+                final long connectReplyId = supplyReplyId.applyAsLong(connectInitialId);
                 correlations.put(connectReplyId, connect);
 
                 newStream = accept::handleStream;
@@ -834,8 +834,8 @@ public final class WsServerStreamFactory implements StreamFactory
         private final MessageConsumer connectInitial;
         private final long connectRouteId;
         private final long connectInitialId;
-        private final long connectReplyId;
 
+        private long connectReplyId;
         private int connectBudget;
         private int connectPadding;
         private int connectReplyBudget;
@@ -845,13 +845,11 @@ public final class WsServerStreamFactory implements StreamFactory
         private WsServerConnectStream(
             MessageConsumer connectInitial,
             long connectRouteId,
-            long connectInitialId,
-            long connectReplyId)
+            long connectInitialId)
         {
             this.connectInitial = connectInitial;
             this.connectRouteId = connectRouteId;
             this.connectInitialId = connectInitialId;
-            this.connectReplyId = connectReplyId;
         }
 
         private void correlate(
@@ -1018,6 +1016,8 @@ public final class WsServerStreamFactory implements StreamFactory
             BeginFW begin)
         {
             final long traceId = begin.trace();
+            this.connectReplyId = begin.streamId();
+
             accept.doBegin(traceId);
         }
 

@@ -22,25 +22,25 @@ import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
+import org.reaktivity.nukleus.ws.internal.WsConfiguration;
 
 public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
 {
-    private final Configuration config;
+    private final WsConfiguration config;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
-    private LongSupplier supplyInitialId;
+    private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
 
     public WsServerStreamFactoryBuilder(
-        Configuration config)
+        WsConfiguration config)
     {
         this.config = config;
     }
@@ -63,7 +63,7 @@ public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
 
     @Override
     public WsServerStreamFactoryBuilder setInitialIdSupplier(
-        LongSupplier supplyInitialId)
+        LongUnaryOperator supplyInitialId)
     {
         this.supplyInitialId = supplyInitialId;
         return this;

@@ -38,8 +38,7 @@ public final class WsControllerFactorySpi implements ControllerFactorySpi<WsCont
         Configuration config,
         ControllerBuilder<WsController> builder)
     {
-        return builder.setName(name())
-                      .setFactory(WsController::new)
+        return builder.setFactory(WsController::new)
                       .build();
     }
 }

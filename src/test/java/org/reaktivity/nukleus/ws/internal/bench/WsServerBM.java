@@ -111,7 +111,7 @@ public class WsServerBM
         this.routeId = controller.routeServer("ws#0", "target#0", null).get();
 
 //        this.source = controller.supplySource("source", Source::new);
-        this.target = controller.supplyTarget("target", Target::new);
+//        this.target = controller.supplyTarget("target", Target::new);
 
         final long sourceRouteId = random.nextLong();
         final long sourceId = random.nextLong();

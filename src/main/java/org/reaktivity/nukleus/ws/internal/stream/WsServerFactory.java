@@ -65,7 +65,7 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WsBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsDataExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsEndExFW;
 
-public final class WsServerStreamFactory implements StreamFactory
+public final class WsServerFactory implements StreamFactory
 {
     private static final int MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE = 125;
     private static final int MAXIMUM_DATA_LENGTH = (1 << Short.SIZE) - 1;
@@ -121,7 +121,7 @@ public final class WsServerStreamFactory implements StreamFactory
     private final Long2ObjectHashMap<WsServerConnectStream> correlations;
     private final MessageFunction<RouteFW> wrapRoute;
 
-    public WsServerStreamFactory(
+    public WsServerFactory(
         WsConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,

@@ -23,7 +23,7 @@ import java.util.Map;
 import org.reaktivity.nukleus.Elektron;
 import org.reaktivity.nukleus.route.RouteKind;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
-import org.reaktivity.nukleus.ws.internal.stream.WsServerStreamFactoryBuilder;
+import org.reaktivity.nukleus.ws.internal.stream.WsServerFactoryBuilder;
 
 final class WsElektron implements Elektron
 {
@@ -32,7 +32,7 @@ final class WsElektron implements Elektron
     WsElektron(
         WsConfiguration config)
     {
-        this.streamFactoryBuilders = singletonMap(SERVER, new WsServerStreamFactoryBuilder(config));
+        this.streamFactoryBuilders = singletonMap(SERVER, new WsServerFactoryBuilder(config));
     }
 
     @Override

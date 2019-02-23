@@ -73,7 +73,7 @@ public final class WsController implements Controller
     @Override
     public String name()
     {
-        return "ws";
+        return WsNukleus.NAME;
     }
 
     public CompletableFuture<Long> routeServer(

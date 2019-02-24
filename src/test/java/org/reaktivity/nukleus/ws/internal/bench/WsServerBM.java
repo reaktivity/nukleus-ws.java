@@ -108,7 +108,7 @@ public class WsServerBM
 
         final Random random = new Random();
 
-        this.routeId = controller.routeServer("ws#0", "target#0", null).get();
+        this.routeId = controller.routeServer("ws#0", "target#0", null, null, null, null).get();
 
 //        this.source = controller.supplySource("source", Source::new);
 //        this.target = controller.supplyTarget("target", Target::new);
@@ -229,7 +229,6 @@ public class WsServerBM
                               .routeId(sourceRouteId)
                               .streamId(sourceId)
                               .payload(p -> p.set(sendArray))
-                              .extension(e -> e.reset())
                               .build();
         }
 

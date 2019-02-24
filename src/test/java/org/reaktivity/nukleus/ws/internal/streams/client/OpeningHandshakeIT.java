@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal.streams.server;
+package org.reaktivity.nukleus.ws.internal.streams.client;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
@@ -36,8 +36,8 @@ public class OpeningHandshakeIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/opening")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/opening");
+            .addScriptRoot("client", "org/reaktivity/specification/nukleus/ws/streams/opening")
+            .addScriptRoot("server", "org/reaktivity/specification/ws/opening");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -55,20 +55,10 @@ public class OpeningHandshakeIT
 
     @Test
     @Specification({
-        "${route}/server/controller",
+        "${route}/client/controller",
         "${client}/connection.established/handshake.request",
         "${server}/connection.established/handshake.response" })
     public void shouldEstablishConnection() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/server.ext/controller",
-        "${client}/request.header.sec.websocket.protocol/handshake.request",
-        "${server}/connection.established/handshake.response" })
-    public void shouldEstablishConnectionWithRequestHeaderSecWebSocketProtocol() throws Exception
     {
         k3po.finish();
     }

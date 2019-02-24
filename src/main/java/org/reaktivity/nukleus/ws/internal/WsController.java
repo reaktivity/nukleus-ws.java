@@ -73,13 +73,12 @@ public final class WsController implements Controller
     @Override
     public String name()
     {
-        return "ws";
+        return WsNukleus.NAME;
     }
 
     public CompletableFuture<Long> routeServer(
         String localAddress,
-        String remoteAddress,
-        String protocol)
+        String remoteAddress)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
@@ -89,7 +88,28 @@ public final class WsController implements Controller
                 .role(b -> b.set(Role.SERVER))
                 .localAddress(localAddress)
                 .remoteAddress(remoteAddress)
-                .extension(b -> b.set(visitRouteEx(protocol)))
+                .build();
+
+        return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
+    }
+
+    public CompletableFuture<Long> routeServer(
+        String localAddress,
+        String remoteAddress,
+        String protocol,
+        String scheme,
+        String authority,
+        String path)
+    {
+        long correlationId = controllerSpi.nextCorrelationId();
+
+        RouteFW route = routeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .correlationId(correlationId)
+                .nukleus(name())
+                .role(b -> b.set(Role.SERVER))
+                .localAddress(localAddress)
+                .remoteAddress(remoteAddress)
+                .extension(b -> b.set(visitRouteEx(protocol, scheme, authority, path)))
                 .build();
 
         return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
@@ -97,8 +117,7 @@ public final class WsController implements Controller
 
     public CompletableFuture<Long> routeClient(
         String localAddress,
-        String remoteAddress,
-        String protocol)
+        String remoteAddress)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
@@ -108,7 +127,28 @@ public final class WsController implements Controller
                 .role(b -> b.set(Role.CLIENT))
                 .localAddress(localAddress)
                 .remoteAddress(remoteAddress)
-                .extension(b -> b.set(visitRouteEx(protocol)))
+                .build();
+
+        return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
+    }
+
+    public CompletableFuture<Long> routeClient(
+        String localAddress,
+        String remoteAddress,
+        String protocol,
+        String scheme,
+        String authority,
+        String path)
+    {
+        long correlationId = controllerSpi.nextCorrelationId();
+
+        RouteFW route = routeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .correlationId(correlationId)
+                .nukleus(name())
+                .role(b -> b.set(Role.CLIENT))
+                .localAddress(localAddress)
+                .remoteAddress(remoteAddress)
+                .extension(b -> b.set(visitRouteEx(protocol, scheme, authority, path)))
                 .build();
 
         return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
@@ -141,11 +181,17 @@ public final class WsController implements Controller
     }
 
     private Flyweight.Builder.Visitor visitRouteEx(
-        String protocol)
+        String protocol,
+        String scheme,
+        String authority,
+        String path)
     {
         return (buffer, offset, limit) ->
             routeExRW.wrap(buffer, offset, limit)
                      .protocol(protocol)
+                     .scheme(scheme)
+                     .authority(authority)
+                     .path(path)
                      .build()
                      .sizeof();
     }

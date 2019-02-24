@@ -57,7 +57,22 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeServer("ws#0", "target#0", "primary")
+               .routeServer("ws#0", "target#0")
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/server.ext/nukleus"
+    })
+    public void shouldRouteServerExt() throws Exception
+    {
+        k3po.start();
+
+        reaktor.controller(WsController.class)
+               .routeServer("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
                .get();
 
         k3po.finish();
@@ -72,7 +87,22 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeClient("ws#0", "target#0", "primary")
+               .routeClient("ws#0", "target#0")
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client.ext/nukleus"
+    })
+    public void shouldRouteClientExt() throws Exception
+    {
+        k3po.start();
+
+        reaktor.controller(WsController.class)
+               .routeClient("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
                .get();
 
         k3po.finish();
@@ -88,7 +118,29 @@ public class ControllerIT
         k3po.start();
 
         long routeId = reaktor.controller(WsController.class)
-                  .routeServer("ws#0", "target#0", "primary")
+                  .routeServer("ws#0", "target#0")
+                  .get();
+
+        k3po.notifyBarrier("ROUTED_SERVER");
+
+        reaktor.controller(WsController.class)
+               .unroute(routeId)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/server.ext/nukleus",
+        "${unroute}/server/nukleus"
+    })
+    public void shouldUnrouteServerExt() throws Exception
+    {
+        k3po.start();
+
+        long routeId = reaktor.controller(WsController.class)
+                  .routeServer("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
                   .get();
 
         k3po.notifyBarrier("ROUTED_SERVER");
@@ -110,7 +162,29 @@ public class ControllerIT
         k3po.start();
 
         long routeId = reaktor.controller(WsController.class)
-                  .routeClient("ws#0", "target#0", "primary")
+                  .routeClient("ws#0", "target#0")
+                  .get();
+
+        k3po.notifyBarrier("ROUTED_CLIENT");
+
+        reaktor.controller(WsController.class)
+               .unroute(routeId)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client.ext/nukleus",
+        "${unroute}/client/nukleus"
+    })
+    public void shouldUnrouteClientExt() throws Exception
+    {
+        k3po.start();
+
+        long routeId = reaktor.controller(WsController.class)
+                  .routeClient("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
                   .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");

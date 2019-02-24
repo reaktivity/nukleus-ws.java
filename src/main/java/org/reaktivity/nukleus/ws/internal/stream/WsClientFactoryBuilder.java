@@ -28,7 +28,7 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 import org.reaktivity.nukleus.ws.internal.WsConfiguration;
 
-public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
+public final class WsClientFactoryBuilder implements StreamFactoryBuilder
 {
     private final WsConfiguration config;
 
@@ -39,14 +39,14 @@ public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
     private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
 
-    public WsServerStreamFactoryBuilder(
+    public WsClientFactoryBuilder(
         WsConfiguration config)
     {
         this.config = config;
     }
 
     @Override
-    public WsServerStreamFactoryBuilder setRouteManager(
+    public WsClientFactoryBuilder setRouteManager(
         RouteManager router)
     {
         this.router = router;
@@ -54,7 +54,7 @@ public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public WsServerStreamFactoryBuilder setWriteBuffer(
+    public WsClientFactoryBuilder setWriteBuffer(
         MutableDirectBuffer writeBuffer)
     {
         this.writeBuffer = writeBuffer;
@@ -62,7 +62,7 @@ public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public WsServerStreamFactoryBuilder setInitialIdSupplier(
+    public WsClientFactoryBuilder setInitialIdSupplier(
         LongUnaryOperator supplyInitialId)
     {
         this.supplyInitialId = supplyInitialId;
@@ -78,14 +78,14 @@ public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public WsServerStreamFactoryBuilder setGroupBudgetClaimer(
+    public WsClientFactoryBuilder setGroupBudgetClaimer(
         LongFunction<IntUnaryOperator> groupBudgetClaimer)
     {
         return this;
     }
 
     @Override
-    public WsServerStreamFactoryBuilder setGroupBudgetReleaser(
+    public WsClientFactoryBuilder setGroupBudgetReleaser(
         LongFunction<IntUnaryOperator> groupBudgetReleaser)
     {
         return this;
@@ -112,7 +112,7 @@ public final class WsServerStreamFactoryBuilder implements StreamFactoryBuilder
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
-        return new WsServerStreamFactory(config, router, writeBuffer,
+        return new WsClientFactory(config, router, writeBuffer,
                 bufferPool, supplyInitialId, supplyReplyId, supplyTraceId);
     }
 }

@@ -15,36 +15,41 @@
  */
 package org.reaktivity.nukleus.ws.internal;
 
-import static java.util.Collections.singletonMap;
+import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 import static org.reaktivity.nukleus.route.RouteKind.SERVER;
 
+import java.util.EnumMap;
 import java.util.Map;
 
 import org.reaktivity.nukleus.Elektron;
 import org.reaktivity.nukleus.route.RouteKind;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
-import org.reaktivity.nukleus.ws.internal.stream.WsServerStreamFactoryBuilder;
+import org.reaktivity.nukleus.ws.internal.stream.WsClientFactoryBuilder;
+import org.reaktivity.nukleus.ws.internal.stream.WsServerFactoryBuilder;
 
 final class WsElektron implements Elektron
 {
-    private final Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders;
+    private final Map<RouteKind, StreamFactoryBuilder> buildersByKind;
 
     WsElektron(
         WsConfiguration config)
     {
-        this.streamFactoryBuilders = singletonMap(SERVER, new WsServerStreamFactoryBuilder(config));
+        final EnumMap<RouteKind, StreamFactoryBuilder> buildersByKind = new EnumMap<>(RouteKind.class);
+        buildersByKind.put(SERVER, new WsServerFactoryBuilder(config));
+        buildersByKind.put(CLIENT, new WsClientFactoryBuilder(config));
+        this.buildersByKind = buildersByKind;
     }
 
     @Override
     public StreamFactoryBuilder streamFactoryBuilder(
         RouteKind kind)
     {
-        return streamFactoryBuilders.get(kind);
+        return buildersByKind.get(kind);
     }
 
     @Override
     public String toString()
     {
-        return String.format("%s %s", getClass().getSimpleName(), streamFactoryBuilders);
+        return String.format("%s %s", getClass().getSimpleName(), buildersByKind);
     }
 }

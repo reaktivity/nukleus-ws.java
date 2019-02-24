@@ -67,6 +67,15 @@ public class ControlIT
 
     @Test
     @Specification({
+        "${route}/client.ext/controller"
+    })
+    public void shouldRouteClientExt() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${route}/server/controller",
         "${unroute}/server/controller"
     })

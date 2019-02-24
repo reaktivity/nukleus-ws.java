@@ -24,7 +24,7 @@ public final class WsControllerFactorySpi implements ControllerFactorySpi<WsCont
     @Override
     public String name()
     {
-        return "ws";
+        return WsNukleus.NAME;
     }
 
     @Override

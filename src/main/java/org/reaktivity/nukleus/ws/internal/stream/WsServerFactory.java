@@ -394,6 +394,7 @@ public final class WsServerFactory implements StreamFactory
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
+                    .trace(traceId)
                     .groupId(0)
                     .padding(replyPadding)
                     .payload(p -> p.set((b, o, m) -> wsHeaderSize)

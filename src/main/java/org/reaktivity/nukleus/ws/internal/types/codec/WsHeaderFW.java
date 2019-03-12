@@ -111,7 +111,7 @@ public final class WsHeaderFW extends Flyweight
         }
 
         byte secondByte = buffer.getByte(offset + 1);
-        wsFrameLength += lengthSize(secondByte) - 1;
+        wsFrameLength += lengthSize0(secondByte) - 1;
 
         if(isMasked(secondByte))
         {
@@ -134,12 +134,12 @@ public final class WsHeaderFW extends Flyweight
     @Override
     public String toString()
     {
-        return String.format("[fin=%s, opcode=%d, payload.length=%d]", fin(), opcode(), length());
+        return String.format("[fin=%s, opcode=%d, payload.length=%d, mask=%s]", fin(), opcode(), length(), mask());
     }
 
     private int lengthSize()
     {
-        return lengthSize(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
+        return lengthSize0(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
     }
 
     public static final class Builder extends Flyweight.Builder<WsHeaderFW>
@@ -213,6 +213,20 @@ public final class WsHeaderFW extends Flyweight
 
             return this;
         }
+
+        public Builder maskingKey(int maskingKey)
+        {
+            byte lengthByte = buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH);
+            buffer().putByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH, (byte)(lengthByte | 0x80));
+            buffer().putInt(offset() + FIELD_OFFSET_FLAGS_AND_OPCODE + FIELD_SIZE_FLAGS_AND_OPCODE + lengthSize(), maskingKey);
+            super.limit(offset() + FIELD_OFFSET_MASK_AND_LENGTH + lengthSize() + FIELD_SIZE_MASKING_KEY);
+            return this;
+        }
+
+        private int lengthSize()
+        {
+            return lengthSize0(buffer().getByte(offset() + FIELD_OFFSET_MASK_AND_LENGTH));
+        }
     }
 
     private static int length(DirectBuffer buffer, int offset)
@@ -243,7 +257,7 @@ public final class WsHeaderFW extends Flyweight
         }
     }
 
-    private static int lengthSize(byte b)
+    private static int lengthSize0(byte b)
     {
         switch (b & 0x7f)
         {

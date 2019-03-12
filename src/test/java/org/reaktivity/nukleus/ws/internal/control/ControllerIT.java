@@ -17,6 +17,8 @@ package org.reaktivity.nukleus.ws.internal.control;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
+import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
+import static org.reaktivity.nukleus.route.RouteKind.SERVER;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -28,6 +30,9 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.ws.internal.WsController;
 import org.reaktivity.reaktor.test.ReaktorRule;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 
 public class ControllerIT
 {
@@ -48,6 +53,8 @@ public class ControllerIT
     @Rule
     public final TestRule chain = outerRule(k3po).around(timeout).around(reaktor);
 
+    private final Gson gson = new Gson();
+
     @Test
     @Specification({
         "${route}/server/nukleus"
@@ -57,7 +64,7 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeServer("ws#0", "target#0")
+               .route(SERVER, "ws#0", "target#0")
                .get();
 
         k3po.finish();
@@ -71,8 +78,14 @@ public class ControllerIT
     {
         k3po.start();
 
+        final JsonObject extension = new JsonObject();
+        extension.addProperty("protocol", "primary");
+        extension.addProperty("scheme", "http");
+        extension.addProperty("authority", "localhost:8080");
+        extension.addProperty("path", "/path?query");
+
         reaktor.controller(WsController.class)
-               .routeServer("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
+               .route(SERVER, "ws#0", "target#0", gson.toJson(extension))
                .get();
 
         k3po.finish();
@@ -87,7 +100,7 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(WsController.class)
-               .routeClient("ws#0", "target#0")
+               .route(CLIENT, "ws#0", "target#0")
                .get();
 
         k3po.finish();
@@ -101,8 +114,14 @@ public class ControllerIT
     {
         k3po.start();
 
+        final JsonObject extension = new JsonObject();
+        extension.addProperty("protocol", "primary");
+        extension.addProperty("scheme", "http");
+        extension.addProperty("authority", "localhost:8080");
+        extension.addProperty("path", "/path?query");
+
         reaktor.controller(WsController.class)
-               .routeClient("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
+               .route(CLIENT, "ws#0", "target#0", gson.toJson(extension))
                .get();
 
         k3po.finish();
@@ -118,7 +137,7 @@ public class ControllerIT
         k3po.start();
 
         long routeId = reaktor.controller(WsController.class)
-                  .routeServer("ws#0", "target#0")
+                  .route(SERVER, "ws#0", "target#0")
                   .get();
 
         k3po.notifyBarrier("ROUTED_SERVER");
@@ -139,9 +158,15 @@ public class ControllerIT
     {
         k3po.start();
 
+        final JsonObject extension = new JsonObject();
+        extension.addProperty("protocol", "primary");
+        extension.addProperty("scheme", "http");
+        extension.addProperty("authority", "localhost:8080");
+        extension.addProperty("path", "/path?query");
+
         long routeId = reaktor.controller(WsController.class)
-                  .routeServer("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
-                  .get();
+                   .route(SERVER, "ws#0", "target#0", gson.toJson(extension))
+                   .get();
 
         k3po.notifyBarrier("ROUTED_SERVER");
 
@@ -162,7 +187,7 @@ public class ControllerIT
         k3po.start();
 
         long routeId = reaktor.controller(WsController.class)
-                  .routeClient("ws#0", "target#0")
+                  .route(CLIENT, "ws#0", "target#0")
                   .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
@@ -183,9 +208,15 @@ public class ControllerIT
     {
         k3po.start();
 
+        final JsonObject extension = new JsonObject();
+        extension.addProperty("protocol", "primary");
+        extension.addProperty("scheme", "http");
+        extension.addProperty("authority", "localhost:8080");
+        extension.addProperty("path", "/path?query");
+
         long routeId = reaktor.controller(WsController.class)
-                  .routeClient("ws#0", "target#0", "primary", "http", "localhost:8080", "/path?query")
-                  .get();
+                   .route(CLIENT, "ws#0", "target#0", gson.toJson(extension))
+                   .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 

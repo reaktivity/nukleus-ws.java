@@ -216,9 +216,9 @@ public final class WsClientFactory implements StreamFactory
             }
 
             return (protocol0 == null || protocol0.equals(routeProtocol)) &&
-                    (routeScheme == null || routeScheme.equals(scheme0)) &&
-                    (routeAuthority == null || routeAuthority.equals(authority0)) &&
-                    (routePath == null || (path0 != null && path0.startsWith(routePath)));
+                    (scheme0 == null || scheme0.equals(routeScheme)) &&
+                    (authority0 == null || authority0.equals(routeAuthority)) &&
+                    (path0 == null || (routePath != null && path0.startsWith(routePath)));
 
         };
 
@@ -243,7 +243,7 @@ public final class WsClientFactory implements StreamFactory
             final String wsPath = hasExtension ? path : wsRouteEx != null ? wsRouteEx.path().asString() : null;
 
             final WsClientAccept accept = new WsClientAccept(routeId, initialId, correlationId, sender, protocol);
-            final WsClientConnect connect = new WsClientConnect(wsRouteId, wsProtocol, wsScheme, wsAuthority, wsPath);
+            final WsClientConnect connect = new WsClientConnect(wsRouteId, wsScheme, wsAuthority, wsPath, wsProtocol);
 
             accept.correlate(connect);
             connect.correlate(accept);
@@ -370,9 +370,8 @@ public final class WsClientFactory implements StreamFactory
                     .extension(e -> e.set(visitWsBeginEx(protocol)))
                     .build();
 
-            receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
-
             router.setThrottle(replyId, this::handleThrottle);
+            receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
         }
 
         private void doData(
@@ -628,6 +627,7 @@ public final class WsClientFactory implements StreamFactory
             this.initialId = supplyInitialId.applyAsLong(routeId);
             this.replyId =  supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
+            this.header = new UnsafeBuffer(new byte[MAXIMUM_HEADER_SIZE]);
             this.decodeState = this::decodeHeader;
         }
 
@@ -640,9 +640,9 @@ public final class WsClientFactory implements StreamFactory
         private void doBegin(
             long traceId)
         {
+            router.setThrottle(initialId, this::handleThrottle);
             doHttpBegin(receiver, routeId, initialId, replyId, traceId,
                     setHttpHeaders(scheme, authority, path, key, protocol));
-            router.setThrottle(replyId, this::handleThrottle);
         }
 
         private void doData(
@@ -655,6 +655,7 @@ public final class WsClientFactory implements StreamFactory
             WsHeaderFW wsHeader = wsHeaderRW.wrap(writeBuffer, DataFW.FIELD_OFFSET_PAYLOAD, writeBuffer.capacity())
                                             .length(payloadSize)
                                             .flagsAndOpcode(flags)
+                                            .maskingKey(0x01) // TODO: mask payload
                                             .build();
 
             final int wsHeaderSize = wsHeader.sizeof();
@@ -846,15 +847,21 @@ public final class WsClientFactory implements StreamFactory
         private void onEnd(
             EndFW end)
         {
-            final long traceId = end.trace();
-            accept.doEnd(traceId, STATUS_NORMAL_CLOSURE);
+            if (accept != null)
+            {
+                final long traceId = end.trace();
+                accept.doEnd(traceId, STATUS_PROTOCOL_ERROR);
+            }
         }
 
         private void onAbort(
             AbortFW abort)
         {
-            final long traceId = abort.trace();
-            accept.doAbort(traceId, STATUS_UNEXPECTED_CONDITION);
+            if (accept != null)
+            {
+                final long traceId = abort.trace();
+                accept.doAbort(traceId, STATUS_UNEXPECTED_CONDITION);
+            }
         }
 
         private void onWindow(
@@ -905,12 +912,14 @@ public final class WsClientFactory implements StreamFactory
             final int length)
         {
             int consumed;
+
+            WsHeaderFW wsHeader;
             if (headerLength > 0 || length < MAXIMUM_HEADER_SIZE)
             {
                 consumed = assembleHeader(buffer, offset, length);
                 if (headerLength >= 2 && headerLength == wsHeaderLength(header))
                 {
-                    wsHeaderRO.wrap(header, 0, headerLength);
+                    wsHeader = wsHeaderRO.wrap(header, 0, headerLength);
                     headerLength = 0;
                 }
                 else
@@ -921,14 +930,19 @@ public final class WsClientFactory implements StreamFactory
             else
             {
                 // No need to assemble header as complete header is available
-                wsHeaderRO.wrap(buffer, offset, offset + MAXIMUM_HEADER_SIZE);
-                consumed = wsHeaderRO.sizeof();
+                wsHeader = wsHeaderRO.wrap(buffer, offset, offset + MAXIMUM_HEADER_SIZE);
+                consumed = wsHeader.sizeof();
             }
 
-            if (wsHeaderRO.mask() && wsHeaderRO.maskingKey() != 0L)
+            if (wsHeader.mask() && wsHeader.maskingKey() != 0L)
             {
-                this.maskingKey = wsHeaderRO.maskingKey();
-                this.payloadLength = wsHeaderRO.length();
+                doReset(supplyTraceId.getAsLong());
+                accept.doAbort(decodeTraceId, STATUS_PROTOCOL_ERROR);
+            }
+            else
+            {
+                this.maskingKey = wsHeader.maskingKey();
+                this.payloadLength = wsHeader.length();
                 this.payloadProgress = 0;
 
                 switch (wsHeaderRO.opcode())
@@ -952,11 +966,6 @@ public final class WsClientFactory implements StreamFactory
                     this.decodeState = this::decodeUnexpected;
                     break;
                 }
-            }
-            else
-            {
-                doReset(supplyTraceId.getAsLong());
-                accept.doAbort(decodeTraceId, STATUS_PROTOCOL_ERROR);
             }
 
             return consumed;
@@ -1087,7 +1096,8 @@ public final class WsClientFactory implements StreamFactory
                     }
                     statusLength = 0;
                     accept.doEnd(decodeTraceId, code);
-                    this.decodeState = this::decodeHeader;
+                    this.accept = null;
+                    this.decodeState = this::decodeUnexpected;
                 }
 
                 return decodeBytes;

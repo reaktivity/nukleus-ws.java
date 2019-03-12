@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.ws.internal.bench;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.reaktivity.nukleus.route.RouteKind.SERVER;
 import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_DIRECTORY;
 import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_STREAMS_BUFFER_CAPACITY;
 
@@ -108,7 +109,7 @@ public class WsServerBM
 
         final Random random = new Random();
 
-        this.routeId = controller.routeServer("ws#0", "target#0", null, null, null, null).get();
+        this.routeId = controller.route(SERVER, "ws#0", "target#0").get();
 
 //        this.source = controller.supplySource("source", Source::new);
 //        this.target = controller.supplyTarget("target", Target::new);

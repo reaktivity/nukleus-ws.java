@@ -69,7 +69,6 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WsEndExFW;
 public final class WsServerFactory implements StreamFactory
 {
     private static final int MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE = 125;
-    private static final int MAXIMUM_DATA_LENGTH = (1 << Short.SIZE) - 1;
 
     private static final byte[] HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(UTF_8);
     private static final String WEBSOCKET_UPGRADE = "websocket";
@@ -388,9 +387,8 @@ public final class WsServerFactory implements StreamFactory
                                             .build();
 
             final int wsHeaderSize = wsHeader.sizeof();
-            final int payloadFragmentSize = Math.min(MAXIMUM_DATA_LENGTH - wsHeaderSize,  payloadSize);
 
-            replyBudget -= wsHeaderSize + payloadFragmentSize + replyPadding;
+            replyBudget -= wsHeaderSize + payloadSize + replyPadding;
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
@@ -398,26 +396,10 @@ public final class WsServerFactory implements StreamFactory
                     .groupId(0)
                     .padding(replyPadding)
                     .payload(p -> p.set((b, o, m) -> wsHeaderSize)
-                                   .put(payload.buffer(), payload.offset(), payloadFragmentSize))
+                                   .put(payload.buffer(), payload.offset(), payloadSize))
                     .build();
 
             receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
-
-            final int payloadRemaining = payloadSize - payloadFragmentSize;
-            if (payloadRemaining > 0)
-            {
-                replyBudget -= payloadRemaining + replyPadding;
-                DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                        .routeId(routeId)
-                        .streamId(replyId)
-                        .trace(traceId)
-                        .groupId(0)
-                        .padding(replyPadding)
-                        .payload(payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining)
-                        .build();
-
-                receiver.accept(data2.typeId(), data2.buffer(), data2.offset(), data2.sizeof());
-            }
         }
 
         private void doEnd(
@@ -984,14 +966,14 @@ public final class WsServerFactory implements StreamFactory
             if (replyCredit > 0)
             {
                 replyBudget += replyCredit;
-                int connectReplyPadding = minPadding + MAXIMUM_HEADER_SIZE;
+                int replyPadding = minPadding + MAXIMUM_HEADER_SIZE;
 
                 final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                         .routeId(routeId)
                         .streamId(replyId)
                         .trace(traceId)
                         .credit(replyCredit)
-                        .padding(connectReplyPadding)
+                        .padding(replyPadding)
                         .groupId(0)
                         .build();
 
@@ -1182,7 +1164,7 @@ public final class WsServerFactory implements StreamFactory
         String path)
     {
         return (buffer, offset, limit) ->
-            protocol == null ? 0 :
+            (protocol == null && scheme == null && authority == null && path == null) ? 0 :
             wsBeginExRW.wrap(buffer, offset, limit)
                        .protocol(protocol)
                        .scheme(scheme)

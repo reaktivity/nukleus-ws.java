@@ -15,10 +15,6 @@
  */
 package org.reaktivity.nukleus.ws.internal.streams.client;
 
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
-
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -28,16 +24,19 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.junit.rules.RuleChain.outerRule;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
+
 /**
- * RFC-6455, section 4.1 "Client-Side Requirements"
- * RFC-6455, section 4.2 "Server-Side Requirements"
+ * RFC-6455, section 5.2 "Base Framing Protocol"
  */
-public class OpeningHandshakeIT
+public class FlowControlIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/nukleus/ws/streams/opening")
-            .addScriptRoot("server", "org/reaktivity/specification/ws/opening");
+            .addScriptRoot("client", "org/reaktivity/specification/nukleus/ws/streams/flowcontrol")
+            .addScriptRoot("server", "org/reaktivity/specification/ws/flowcontrol");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -56,20 +55,11 @@ public class OpeningHandshakeIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/connection.established/handshake.request",
-        "${server}/connection.established/handshake.response" })
-    public void shouldEstablishConnection() throws Exception
+        "${client}/echo.payload.with.padding/client",
+        "${server}/echo.payload.with.padding/server" })
+    public void shouldEchoPayloadWithPadding() throws Exception
     {
         k3po.finish();
     }
 
-    @Test
-    @Specification({
-        "${route}/client.ext/controller",
-        "${client}/connection.established/handshake.request",
-        "${server}/request.header.sec.websocket.protocol/handshake.response" })
-    public void shouldEstablishConnectionWithRequestHeaderSecWebSocketProtocol() throws Exception
-    {
-        k3po.finish();
-    }
 }

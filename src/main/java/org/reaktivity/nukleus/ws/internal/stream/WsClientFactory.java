@@ -864,6 +864,8 @@ public final class WsClientFactory implements StreamFactory
         {
             final long traceId = reset.trace();
             accept.doReset(traceId);
+
+            correlations.remove(replyId);
         }
 
         // @return no bytes consumed to assemble websocket header

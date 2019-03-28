@@ -1100,6 +1100,8 @@ public final class WsServerFactory implements StreamFactory
         {
             final long traceId = reset.trace();
             accept.doReset(traceId);
+
+            correlations.remove(replyId);
         }
     }
 

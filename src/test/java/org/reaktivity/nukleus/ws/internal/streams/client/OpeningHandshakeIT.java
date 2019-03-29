@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2018 The Reaktivity Project
+ * Copyright 2016-2019 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -59,6 +59,16 @@ public class OpeningHandshakeIT
         "${client}/connection.established/handshake.request",
         "${server}/connection.established/handshake.response" })
     public void shouldEstablishConnection() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client.ext/controller",
+        "${client}/connection.established/handshake.request",
+        "${server}/request.header.sec.websocket.protocol/handshake.response" })
+    public void shouldEstablishConnectionWithRequestHeaderSecWebSocketProtocol() throws Exception
     {
         k3po.finish();
     }

@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal.streams.server;
+package org.reaktivity.nukleus.ws.internal.streams.client;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
@@ -36,8 +36,8 @@ public class BaseFramingIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/framing")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/framing")
+            .addScriptRoot("client", "org/reaktivity/specification/nukleus/ws/streams/framing")
+            .addScriptRoot("server", "org/reaktivity/specification/ws/framing")
             // TODO: remove the following when all tests have been completed
             .addScriptRoot("streams", "org/reaktivity/specification/ws/framing");
 
@@ -58,7 +58,7 @@ public class BaseFramingIT
     @Test
     @Ignore("No way to read or write 0 length data frame at high level: reaktivity/k3po-nukleus-ext.java#11")
     @Specification({
-        "${route}/server/controller",
+        "${route}/client/controller",
         "${client}/echo.binary.payload.length.0/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.0/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength0() throws Exception
@@ -68,7 +68,7 @@ public class BaseFramingIT
 
     @Test
     @Specification({
-        "${route}/server/controller",
+        "${route}/client/controller",
         "${client}/echo.binary.payload.length.125/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.125/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength125() throws Exception
@@ -78,7 +78,7 @@ public class BaseFramingIT
 
     @Test
     @Specification({
-        "${route}/server/controller",
+        "${route}/client/controller",
         "${client}/echo.binary.payload.length.126/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.126/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength126() throws Exception
@@ -106,7 +106,7 @@ public class BaseFramingIT
 
     @Test
     @Specification({
-        "${route}/server/controller",
+        "${route}/client/controller",
         "${client}/echo.binary.payload.length.65535/handshake.request.and.frame",
         "${server}/echo.binary.payload.length.65535/handshake.response.and.frame" })
     public void shouldEchoBinaryFrameWithPayloadLength65535() throws Exception

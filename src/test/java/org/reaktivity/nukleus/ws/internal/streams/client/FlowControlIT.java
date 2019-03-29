@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal.streams.server;
+package org.reaktivity.nukleus.ws.internal.streams.client;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -35,8 +35,8 @@ public class FlowControlIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/flowcontrol")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/flowcontrol");
+            .addScriptRoot("client", "org/reaktivity/specification/nukleus/ws/streams/flowcontrol")
+            .addScriptRoot("server", "org/reaktivity/specification/ws/flowcontrol");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -54,7 +54,7 @@ public class FlowControlIT
 
     @Test
     @Specification({
-        "${route}/server/controller",
+        "${route}/client/controller",
         "${client}/echo.payload.with.padding/client",
         "${server}/echo.payload.with.padding/server" })
     public void shouldEchoPayloadWithPadding() throws Exception

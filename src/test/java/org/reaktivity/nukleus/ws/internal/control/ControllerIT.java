@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2018 The Reaktivity Project
+ * Copyright 2016-2019 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -82,7 +82,7 @@ public class ControllerIT
         extension.addProperty("protocol", "primary");
         extension.addProperty("scheme", "http");
         extension.addProperty("authority", "localhost:8080");
-        extension.addProperty("path", "/path?query");
+        extension.addProperty("path", "/echo");
 
         reaktor.controller(WsController.class)
                .route(SERVER, "ws#0", "target#0", gson.toJson(extension))
@@ -118,7 +118,7 @@ public class ControllerIT
         extension.addProperty("protocol", "primary");
         extension.addProperty("scheme", "http");
         extension.addProperty("authority", "localhost:8080");
-        extension.addProperty("path", "/path?query");
+        extension.addProperty("path", "/echo");
 
         reaktor.controller(WsController.class)
                .route(CLIENT, "ws#0", "target#0", gson.toJson(extension))
@@ -162,7 +162,7 @@ public class ControllerIT
         extension.addProperty("protocol", "primary");
         extension.addProperty("scheme", "http");
         extension.addProperty("authority", "localhost:8080");
-        extension.addProperty("path", "/path?query");
+        extension.addProperty("path", "/echo");
 
         long routeId = reaktor.controller(WsController.class)
                    .route(SERVER, "ws#0", "target#0", gson.toJson(extension))
@@ -212,7 +212,7 @@ public class ControllerIT
         extension.addProperty("protocol", "primary");
         extension.addProperty("scheme", "http");
         extension.addProperty("authority", "localhost:8080");
-        extension.addProperty("path", "/path?query");
+        extension.addProperty("path", "/echo");
 
         long routeId = reaktor.controller(WsController.class)
                    .route(CLIENT, "ws#0", "target#0", gson.toJson(extension))

@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2018 The Reaktivity Project
+ * Copyright 2016-2019 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -116,9 +116,8 @@ public class WsServerBM
 
         final long sourceRouteId = random.nextLong();
         final long sourceId = random.nextLong();
-        final long correlationId = random.nextLong();
 
-        source.reinit(sourceRouteId, routeId, sourceId, correlationId);
+        source.reinit(sourceRouteId, routeId, sourceId);
         target.reinit();
 
         source.doBegin();
@@ -178,8 +177,7 @@ public class WsServerBM
         private void reinit(
             long sourceRouteId,
             long sourceRef,
-            long sourceId,
-            long correlationId)
+            long sourceId)
         {
             final MutableDirectBuffer writeBuffer = new UnsafeBuffer(new byte[256]);
 
@@ -200,7 +198,6 @@ public class WsServerBM
             this.begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(sourceRouteId)
                     .streamId(sourceId)
-                    .correlationId(correlationId)
                     .extension(e -> e.set(visitHttpBeginEx(headers)))
                     .build();
 

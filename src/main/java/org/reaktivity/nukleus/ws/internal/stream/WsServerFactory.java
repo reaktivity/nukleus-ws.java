@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2018 The Reaktivity Project
+ * Copyright 2016-2019 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -69,7 +69,6 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WsEndExFW;
 public final class WsServerFactory implements StreamFactory
 {
     private static final int MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE = 125;
-    private static final int MAXIMUM_DATA_LENGTH = (1 << Short.SIZE) - 1;
 
     private static final byte[] HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(UTF_8);
     private static final String WEBSOCKET_UPGRADE = "websocket";
@@ -171,7 +170,6 @@ public final class WsServerFactory implements StreamFactory
     {
         final long routeId = begin.routeId();
         final long initialId = begin.streamId();
-        final long correlationId = begin.correlationId();
         final OctetsFW extension = begin.extension();
 
         // TODO: need lightweight approach (start)
@@ -198,9 +196,8 @@ public final class WsServerFactory implements StreamFactory
         if (upgrade == null)
         {
             final long newReplyId = supplyReplyId.applyAsLong(initialId);
-            doHttpBegin(sender, routeId, newReplyId, correlationId, supplyTraceId.getAsLong(),
-                    hs -> hs.item(h -> h.name(":status").value("400"))
-                            .item(h -> h.name("connection").value("close")));
+            doHttpBegin(sender, routeId, newReplyId, supplyTraceId.getAsLong(), hs -> hs.item(h -> h.name(":status").value("400"))
+                    .item(h -> h.name("connection").value("close")));
             doHttpEnd(sender, routeId, newReplyId, supplyTraceId.getAsLong());
             newStream = (t, b, o, l) -> {};
         }
@@ -252,7 +249,7 @@ public final class WsServerFactory implements StreamFactory
 
                 final long wsRouteId = route.correlationId();
 
-                final WsServerAccept accept = new WsServerAccept(sender, routeId, initialId, correlationId,
+                final WsServerAccept accept = new WsServerAccept(sender, routeId, initialId,
                                                                  key, protocol, scheme, authority, path);
 
                 final WsServerConnect connect = new WsServerConnect(wsRouteId);
@@ -299,7 +296,6 @@ public final class WsServerFactory implements StreamFactory
         private final MessageConsumer receiver;
         private final long routeId;
         private final long initialId;
-        private final long correlationId;
         private final long replyId;
         private final String key;
         private final String protocol;
@@ -331,7 +327,6 @@ public final class WsServerFactory implements StreamFactory
             MessageConsumer receiver,
             long routeId,
             long initialId,
-            long correlationId,
             String key,
             String protocol,
             String scheme,
@@ -341,7 +336,6 @@ public final class WsServerFactory implements StreamFactory
             this.receiver = receiver;
             this.routeId = routeId;
             this.initialId = initialId;
-            this.correlationId = correlationId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.key = key;
             this.protocol = protocol;
@@ -370,8 +364,7 @@ public final class WsServerFactory implements StreamFactory
             final Encoder encoder = Base64.getEncoder();
             final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
 
-            doHttpBegin(receiver, routeId, replyId, correlationId, traceId,
-                    setHttpHeaders(handshakeHash, protocol));
+            doHttpBegin(receiver, routeId, replyId, traceId, setHttpHeaders(handshakeHash, protocol));
             router.setThrottle(replyId, this::handleThrottle);
         }
 
@@ -388,9 +381,8 @@ public final class WsServerFactory implements StreamFactory
                                             .build();
 
             final int wsHeaderSize = wsHeader.sizeof();
-            final int payloadFragmentSize = Math.min(MAXIMUM_DATA_LENGTH - wsHeaderSize,  payloadSize);
 
-            replyBudget -= wsHeaderSize + payloadFragmentSize + replyPadding;
+            replyBudget -= wsHeaderSize + payloadSize + replyPadding;
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
@@ -398,26 +390,10 @@ public final class WsServerFactory implements StreamFactory
                     .groupId(0)
                     .padding(replyPadding)
                     .payload(p -> p.set((b, o, m) -> wsHeaderSize)
-                                   .put(payload.buffer(), payload.offset(), payloadFragmentSize))
+                                   .put(payload.buffer(), payload.offset(), payloadSize))
                     .build();
 
             receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
-
-            final int payloadRemaining = payloadSize - payloadFragmentSize;
-            if (payloadRemaining > 0)
-            {
-                replyBudget -= payloadRemaining + replyPadding;
-                DataFW data2 = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                        .routeId(routeId)
-                        .streamId(replyId)
-                        .trace(traceId)
-                        .groupId(0)
-                        .padding(replyPadding)
-                        .payload(payload.buffer(), payload.offset() + payloadFragmentSize, payloadRemaining)
-                        .build();
-
-                receiver.accept(data2.typeId(), data2.buffer(), data2.offset(), data2.sizeof());
-            }
         }
 
         private void doEnd(
@@ -904,7 +880,6 @@ public final class WsServerFactory implements StreamFactory
                     .routeId(routeId)
                     .streamId(initialId)
                     .trace(traceId)
-                    .correlationId(replyId)
                     .extension(e -> e.set(visitWsBeginEx(protocol, scheme, authority, path)))
                     .build();
 
@@ -984,14 +959,14 @@ public final class WsServerFactory implements StreamFactory
             if (replyCredit > 0)
             {
                 replyBudget += replyCredit;
-                int connectReplyPadding = minPadding + MAXIMUM_HEADER_SIZE;
+                int replyPadding = minPadding + MAXIMUM_HEADER_SIZE;
 
                 final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                         .routeId(routeId)
                         .streamId(replyId)
                         .trace(traceId)
                         .credit(replyCredit)
-                        .padding(connectReplyPadding)
+                        .padding(replyPadding)
                         .groupId(0)
                         .build();
 
@@ -1118,6 +1093,8 @@ public final class WsServerFactory implements StreamFactory
         {
             final long traceId = reset.trace();
             accept.doReset(traceId);
+
+            correlations.remove(replyId);
         }
     }
 
@@ -1125,7 +1102,6 @@ public final class WsServerFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
-        long correlationId,
         long traceId,
         Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
     {
@@ -1133,7 +1109,6 @@ public final class WsServerFactory implements StreamFactory
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(traceId)
-                .correlationId(correlationId)
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();
 
@@ -1182,7 +1157,7 @@ public final class WsServerFactory implements StreamFactory
         String path)
     {
         return (buffer, offset, limit) ->
-            protocol == null ? 0 :
+            (protocol == null && scheme == null && authority == null && path == null) ? 0 :
             wsBeginExRW.wrap(buffer, offset, limit)
                        .protocol(protocol)
                        .scheme(scheme)

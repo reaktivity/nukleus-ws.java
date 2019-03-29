@@ -174,7 +174,6 @@ public final class WsClientFactory implements StreamFactory
     {
         final long routeId = begin.routeId();
         final long initialId = begin.streamId();
-        final long correlationId = begin.correlationId();
         final OctetsFW extension = begin.extension();
         final boolean hasExtension = extension.sizeof() != 0;
 
@@ -241,7 +240,7 @@ public final class WsClientFactory implements StreamFactory
             final String wsAuthority = hasExtension ? authority : wsRouteEx != null ? wsRouteEx.authority().asString() : null;
             final String wsPath = hasExtension ? path : wsRouteEx != null ? wsRouteEx.path().asString() : null;
 
-            final WsClientAccept accept = new WsClientAccept(routeId, initialId, correlationId, sender, protocol);
+            final WsClientAccept accept = new WsClientAccept(routeId, initialId, sender, protocol);
             final WsClientConnect connect = new WsClientConnect(wsRouteId, wsScheme, wsAuthority, wsPath, wsProtocol);
 
             accept.correlate(connect);
@@ -326,7 +325,6 @@ public final class WsClientFactory implements StreamFactory
         private final MessageConsumer receiver;
         private final long routeId;
         private final long initialId;
-        private final long correlationId;
         private final long replyId;
         private final String protocol;
 
@@ -339,13 +337,11 @@ public final class WsClientFactory implements StreamFactory
         private WsClientAccept(
             long routeId,
             long initialId,
-            long correlationId,
             MessageConsumer receiver,
             String protocol)
         {
             this.routeId = routeId;
             this.initialId = initialId;
-            this.correlationId = correlationId;
             this.receiver = receiver;
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.protocol = protocol;
@@ -364,7 +360,6 @@ public final class WsClientFactory implements StreamFactory
                     .routeId(routeId)
                     .streamId(replyId)
                     .trace(traceId)
-                    .correlationId(correlationId)
                     .extension(e -> e.set(visitWsBeginEx(protocol)))
                     .build();
 
@@ -639,8 +634,7 @@ public final class WsClientFactory implements StreamFactory
             long traceId)
         {
             router.setThrottle(initialId, this::handleThrottle);
-            doHttpBegin(receiver, routeId, initialId, replyId, traceId,
-                    setHttpHeaders(scheme, authority, path, key, protocol));
+            doHttpBegin(receiver, routeId, initialId, traceId, setHttpHeaders(scheme, authority, path, key, protocol));
         }
 
         private void doData(
@@ -1135,7 +1129,6 @@ public final class WsClientFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
-        long correlationId,
         long traceId,
         Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
     {
@@ -1143,7 +1136,6 @@ public final class WsClientFactory implements StreamFactory
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(traceId)
-                .correlationId(correlationId)
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();
 

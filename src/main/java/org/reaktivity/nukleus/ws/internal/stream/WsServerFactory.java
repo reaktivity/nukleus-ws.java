@@ -170,7 +170,6 @@ public final class WsServerFactory implements StreamFactory
     {
         final long routeId = begin.routeId();
         final long initialId = begin.streamId();
-        final long correlationId = begin.correlationId();
         final OctetsFW extension = begin.extension();
 
         // TODO: need lightweight approach (start)
@@ -197,9 +196,8 @@ public final class WsServerFactory implements StreamFactory
         if (upgrade == null)
         {
             final long newReplyId = supplyReplyId.applyAsLong(initialId);
-            doHttpBegin(sender, routeId, newReplyId, correlationId, supplyTraceId.getAsLong(),
-                    hs -> hs.item(h -> h.name(":status").value("400"))
-                            .item(h -> h.name("connection").value("close")));
+            doHttpBegin(sender, routeId, newReplyId, supplyTraceId.getAsLong(), hs -> hs.item(h -> h.name(":status").value("400"))
+                    .item(h -> h.name("connection").value("close")));
             doHttpEnd(sender, routeId, newReplyId, supplyTraceId.getAsLong());
             newStream = (t, b, o, l) -> {};
         }
@@ -251,7 +249,7 @@ public final class WsServerFactory implements StreamFactory
 
                 final long wsRouteId = route.correlationId();
 
-                final WsServerAccept accept = new WsServerAccept(sender, routeId, initialId, correlationId,
+                final WsServerAccept accept = new WsServerAccept(sender, routeId, initialId,
                                                                  key, protocol, scheme, authority, path);
 
                 final WsServerConnect connect = new WsServerConnect(wsRouteId);
@@ -298,7 +296,6 @@ public final class WsServerFactory implements StreamFactory
         private final MessageConsumer receiver;
         private final long routeId;
         private final long initialId;
-        private final long correlationId;
         private final long replyId;
         private final String key;
         private final String protocol;
@@ -330,7 +327,6 @@ public final class WsServerFactory implements StreamFactory
             MessageConsumer receiver,
             long routeId,
             long initialId,
-            long correlationId,
             String key,
             String protocol,
             String scheme,
@@ -340,7 +336,6 @@ public final class WsServerFactory implements StreamFactory
             this.receiver = receiver;
             this.routeId = routeId;
             this.initialId = initialId;
-            this.correlationId = correlationId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.key = key;
             this.protocol = protocol;
@@ -369,8 +364,7 @@ public final class WsServerFactory implements StreamFactory
             final Encoder encoder = Base64.getEncoder();
             final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
 
-            doHttpBegin(receiver, routeId, replyId, correlationId, traceId,
-                    setHttpHeaders(handshakeHash, protocol));
+            doHttpBegin(receiver, routeId, replyId, traceId, setHttpHeaders(handshakeHash, protocol));
             router.setThrottle(replyId, this::handleThrottle);
         }
 
@@ -886,7 +880,6 @@ public final class WsServerFactory implements StreamFactory
                     .routeId(routeId)
                     .streamId(initialId)
                     .trace(traceId)
-                    .correlationId(replyId)
                     .extension(e -> e.set(visitWsBeginEx(protocol, scheme, authority, path)))
                     .build();
 
@@ -1109,7 +1102,6 @@ public final class WsServerFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
-        long correlationId,
         long traceId,
         Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
     {
@@ -1117,7 +1109,6 @@ public final class WsServerFactory implements StreamFactory
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(traceId)
-                .correlationId(correlationId)
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();
 

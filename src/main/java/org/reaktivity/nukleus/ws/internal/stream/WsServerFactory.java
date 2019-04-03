@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.ws.internal.stream;
 
+import static java.lang.System.currentTimeMillis;
 import static java.nio.ByteOrder.BIG_ENDIAN;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.charset.StandardCharsets.US_ASCII;
@@ -349,6 +350,18 @@ public final class WsServerFactory implements StreamFactory
             this.decodeState = this::decodeHeader;
         }
 
+        @Override
+        public String toString()
+        {
+            return String.format(
+                "[initialId=%d, replyId=%d, replyBudget=%d, replyPadding=%d]",
+                initialId,
+                replyId,
+                replyBudget,
+                replyPadding
+                );
+        }
+
         private void correlate(
             WsServerConnect connect)
         {
@@ -383,6 +396,16 @@ public final class WsServerFactory implements StreamFactory
             final int wsHeaderSize = wsHeader.sizeof();
 
             replyBudget -= wsHeaderSize + payloadSize + replyPadding;
+            if (replyBudget < 0)
+            {
+                String assertionErrorMessage = String.format(
+                    "[%016x] wsHeaderSize=%d, payloadSize=%d, %s",
+                    currentTimeMillis(),
+                    wsHeaderSize,
+                    payloadSize,
+                    this);
+                throw new AssertionError(assertionErrorMessage);
+            }
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
@@ -894,9 +917,22 @@ public final class WsServerFactory implements StreamFactory
             int maskingKey,
             OctetsFW payload)
         {
-            initialBudget -= payload.sizeof() + initialPadding;
-
             final int capacity = payload.sizeof();
+            initialBudget -= capacity + initialPadding;
+
+            if (initialBudget < 0)
+            {
+                String assertionErrorMessage = String.format(
+                    "[%016x] initialBudget=%d, streamId=%d, payloadSize=%d, initialPadding=%d, %s",
+                    currentTimeMillis(),
+                    initialBudget,
+                    initialId,
+                    capacity,
+                    initialPadding,
+                    accept);
+                throw new AssertionError(assertionErrorMessage);
+            }
+
             final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(initialId)

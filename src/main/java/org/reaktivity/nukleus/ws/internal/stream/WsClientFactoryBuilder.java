@@ -20,6 +20,7 @@ import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
@@ -37,6 +38,7 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTraceId;
+    private ToIntFunction<String> supplyTypeId;
     private Supplier<BufferPool> supplyBufferPool;
 
     public WsClientFactoryBuilder(
@@ -108,11 +110,26 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
+    public StreamFactoryBuilder setTypeIdSupplier(
+        ToIntFunction<String> supplyTypeId)
+    {
+        this.supplyTypeId = supplyTypeId;
+        return this;
+    }
+
+    @Override
     public StreamFactory build()
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
-        return new WsClientFactory(config, router, writeBuffer,
-                bufferPool, supplyInitialId, supplyReplyId, supplyTraceId);
+        return new WsClientFactory(
+                config,
+                router,
+                writeBuffer,
+                bufferPool,
+                supplyInitialId,
+                supplyReplyId,
+                supplyTraceId,
+                supplyTypeId);
     }
 }

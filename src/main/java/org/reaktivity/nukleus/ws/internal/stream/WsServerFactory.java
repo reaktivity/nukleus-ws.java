@@ -35,6 +35,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
+import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
@@ -48,6 +49,7 @@ import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.ws.internal.WsConfiguration;
+import org.reaktivity.nukleus.ws.internal.WsNukleus;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.ListFW;
@@ -120,6 +122,8 @@ public final class WsServerFactory implements StreamFactory
 
     private final Long2ObjectHashMap<WsServerConnect> correlations;
     private final MessageFunction<RouteFW> wrapRoute;
+    private final int wsTypeId;
+    private final int httpTypeId;
 
     public WsServerFactory(
         WsConfiguration config,
@@ -128,7 +132,8 @@ public final class WsServerFactory implements StreamFactory
         BufferPool bufferPool,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTraceId)
+        LongSupplier supplyTraceId,
+        ToIntFunction<String> supplyTypeId)
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
@@ -137,6 +142,8 @@ public final class WsServerFactory implements StreamFactory
         this.supplyTraceId = requireNonNull(supplyTraceId);
         this.correlations = new Long2ObjectHashMap<>();
         this.wrapRoute = this::wrapRoute;
+        this.wsTypeId = supplyTypeId.applyAsInt(WsNukleus.NAME);
+        this.httpTypeId = supplyTypeId.applyAsInt("http");
     }
 
     @Override
@@ -1120,6 +1127,7 @@ public final class WsServerFactory implements StreamFactory
     {
         return (buffer, offset, limit) ->
             httpBeginExRW.wrap(buffer, offset, limit)
+                         .typeId(httpTypeId)
                          .headers(headers)
                          .build()
                          .sizeof();
@@ -1145,6 +1153,7 @@ public final class WsServerFactory implements StreamFactory
     {
         return (buffer, offset, limit) ->
             wsDataExRW.wrap(buffer, offset, limit)
+                      .typeId(wsTypeId)
                       .flags(flags)
                       .build()
                       .sizeof();
@@ -1159,6 +1168,7 @@ public final class WsServerFactory implements StreamFactory
         return (buffer, offset, limit) ->
             (protocol == null && scheme == null && authority == null && path == null) ? 0 :
             wsBeginExRW.wrap(buffer, offset, limit)
+                       .typeId(wsTypeId)
                        .protocol(protocol)
                        .scheme(scheme)
                        .authority(authority)
@@ -1172,6 +1182,7 @@ public final class WsServerFactory implements StreamFactory
     {
         return (buffer, offset, limit) ->
             wsEndExRW.wrap(buffer, offset, limit)
+                     .typeId(wsTypeId)
                      .code(code)
                      .reason("")
                      .build()

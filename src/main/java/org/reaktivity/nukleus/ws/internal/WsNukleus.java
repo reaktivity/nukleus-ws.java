@@ -17,9 +17,9 @@ package org.reaktivity.nukleus.ws.internal;
 
 import org.reaktivity.nukleus.Nukleus;
 
-final class WsNukleus implements Nukleus
+public final class WsNukleus implements Nukleus
 {
-    static final String NAME = "ws";
+    public static final String NAME = "ws";
 
     private final WsConfiguration config;
 

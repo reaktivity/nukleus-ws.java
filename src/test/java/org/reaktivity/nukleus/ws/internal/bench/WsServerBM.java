@@ -17,8 +17,8 @@ package org.reaktivity.nukleus.ws.internal.bench;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.route.RouteKind.SERVER;
-import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_DIRECTORY;
-import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_STREAMS_BUFFER_CAPACITY;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DIRECTORY;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_STREAMS_BUFFER_CAPACITY;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;

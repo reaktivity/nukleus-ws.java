@@ -13,37 +13,14 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal;
-
-import org.reaktivity.nukleus.Nukleus;
-
-public final class WsNukleus implements Nukleus
+module org.reaktivity.nukleus.ws
 {
-    public static final String NAME = "ws";
+    requires org.reaktivity.nukleus;
+    requires com.google.gson;
 
-    private final WsConfiguration config;
+    provides org.reaktivity.nukleus.NukleusFactorySpi
+        with org.reaktivity.nukleus.ws.internal.WsNukleusFactorySpi;
 
-    WsNukleus(
-        WsConfiguration config)
-    {
-        this.config = config;
-    }
-
-    @Override
-    public String name()
-    {
-        return WsNukleus.NAME;
-    }
-
-    @Override
-    public WsConfiguration config()
-    {
-        return config;
-    }
-
-    @Override
-    public WsElektron supplyElektron()
-    {
-        return new WsElektron(config);
-    }
+    provides org.reaktivity.nukleus.ControllerFactorySpi
+        with org.reaktivity.nukleus.ws.internal.WsControllerFactorySpi;
 }

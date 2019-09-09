@@ -1035,17 +1035,17 @@ public final class WsClientFactory implements StreamFactory
             int maskingKey,
             int decodeBytes)
         {
-            decodeBytes = decodeBytes % 4;
+            int rotateBytes = decodeBytes % 4;
             int left;
             int right;
             if (nativeOrder() == BIG_ENDIAN)
             {
-                left = decodeBytes * 8;
+                left = rotateBytes * 8;
                 right = Integer.SIZE - left;
             }
             else
             {
-                right = decodeBytes * 8;
+                right = rotateBytes * 8;
                 left = Integer.SIZE - right;
             }
             return (maskingKey << left) | (maskingKey >>> right);

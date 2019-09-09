@@ -831,17 +831,17 @@ public final class WsServerFactory implements StreamFactory
             int maskingKey,
             int decodeBytes)
         {
-            int rotateBytes = decodeBytes % 4;
+            decodeBytes = decodeBytes % 4;
             int left;
             int right;
             if (nativeOrder() == BIG_ENDIAN)
             {
-                left = rotateBytes * 8;
+                left = decodeBytes * 8;
                 right = Integer.SIZE - left;
             }
             else
             {
-                right = rotateBytes * 8;
+                right = decodeBytes * 8;
                 left = Integer.SIZE - right;
             }
             return (maskingKey << left) | (maskingKey >>> right);

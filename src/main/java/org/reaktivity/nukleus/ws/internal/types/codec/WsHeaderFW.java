@@ -105,15 +105,15 @@ public final class WsHeaderFW extends Flyweight
     {
         int maxLength = maxLimit - offset;
         int wsFrameLength = 2;
-        if(maxLength < wsFrameLength)
+        if (maxLength < wsFrameLength)
         {
-           return false;
+            return false;
         }
 
         byte secondByte = buffer.getByte(offset + 1);
         wsFrameLength += lengthSize0(secondByte) - 1;
 
-        if(isMasked(secondByte))
+        if (isMasked(secondByte))
         {
             wsFrameLength+= 4;
         }

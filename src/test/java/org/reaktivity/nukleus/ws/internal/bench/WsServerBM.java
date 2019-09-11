@@ -111,9 +111,6 @@ public class WsServerBM
 
         this.routeId = controller.route(SERVER, "ws#0", "target#0").get();
 
-//        this.source = controller.supplySource("source", Source::new);
-//        this.target = controller.supplyTarget("target", Target::new);
-
         final long sourceRouteId = random.nextLong();
         final long sourceId = random.nextLong();
 
@@ -191,7 +188,7 @@ public class WsServerBM
                 hs.item(h -> h.name("sec-websocket-key").value("dGhlIHNhbXBsZSBub25jZQ=="));
                 hs.item(h -> h.name("sec-websocket-version").value("13"));
 
-//                hs.item(h -> h.name("sec-websocket-protocol").value(protocol));
+                //hs.item(h -> h.name("sec-websocket-protocol").value(protocol));
             };
 
             // TODO: move to doBegin to avoid writeBuffer overwrite with DataFW

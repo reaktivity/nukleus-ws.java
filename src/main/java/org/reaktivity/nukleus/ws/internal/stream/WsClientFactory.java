@@ -1245,7 +1245,7 @@ public final class WsClientFactory implements StreamFactory
 
         if (isMasked(secondByte))
         {
-            wsHeaderLength+= 4;
+            wsHeaderLength += 4;
         }
 
         return wsHeaderLength;

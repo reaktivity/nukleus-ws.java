@@ -1226,7 +1226,7 @@ public final class WsServerFactory implements StreamFactory
     {
         int index = -1;
 
-        for (int i=0; i < array.length; i++)
+        for (int i = 0; i < array.length; i++)
         {
             if (Objects.equals(array[i], candidate))
             {
@@ -1247,7 +1247,7 @@ public final class WsServerFactory implements StreamFactory
 
         if (isMasked(secondByte))
         {
-            wsHeaderLength+= 4;
+            wsHeaderLength += 4;
         }
 
         return wsHeaderLength;

@@ -115,7 +115,7 @@ public final class WsHeaderFW extends Flyweight
 
         if (isMasked(secondByte))
         {
-            wsFrameLength+= 4;
+            wsFrameLength += 4;
         }
 
         return wsFrameLength <= maxLength;

@@ -51,9 +51,9 @@ import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.ws.internal.WsConfiguration;
 import org.reaktivity.nukleus.ws.internal.WsNukleus;
+import org.reaktivity.nukleus.ws.internal.types.ArrayFW;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
-import org.reaktivity.nukleus.ws.internal.types.ListFW;
 import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
 import org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
@@ -1137,7 +1137,7 @@ public final class WsClientFactory implements StreamFactory
         long routeId,
         long streamId,
         long traceId,
-        Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
+        Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
     {
         BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
@@ -1150,7 +1150,7 @@ public final class WsClientFactory implements StreamFactory
     }
 
     private Flyweight.Builder.Visitor visitHttpBeginEx(
-        Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
+        Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
     {
         return (buffer, offset, limit) ->
             httpBeginExRW.wrap(buffer, offset, limit)
@@ -1195,7 +1195,7 @@ public final class WsClientFactory implements StreamFactory
                      .sizeof();
     }
 
-    private Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> setHttpHeaders(
+    private Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> setHttpHeaders(
         String scheme,
         String authority,
         String path,

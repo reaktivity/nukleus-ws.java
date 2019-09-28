@@ -15,8 +15,6 @@
  */
 package org.reaktivity.nukleus.ws.internal.stream;
 
-import java.util.function.IntUnaryOperator;
-import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
@@ -76,20 +74,6 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
         LongUnaryOperator supplyReplyId)
     {
         this.supplyReplyId = supplyReplyId;
-        return this;
-    }
-
-    @Override
-    public WsClientFactoryBuilder setGroupBudgetClaimer(
-        LongFunction<IntUnaryOperator> groupBudgetClaimer)
-    {
-        return this;
-    }
-
-    @Override
-    public WsClientFactoryBuilder setGroupBudgetReleaser(
-        LongFunction<IntUnaryOperator> groupBudgetReleaser)
-    {
         return this;
     }
 

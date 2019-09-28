@@ -388,7 +388,7 @@ public final class WsClientFactory implements StreamFactory
                     .streamId(replyId)
                     .trace(traceId)
                     .groupId(0)
-                    .padding(replyPadding)
+                    .reserved(payload.sizeof() + replyPadding)
                     .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskingKey)))
                     .extension(e -> e.set(visitWsDataEx(flags)))
                     .build();
@@ -522,7 +522,7 @@ public final class WsClientFactory implements StreamFactory
         private void onData(
             DataFW data)
         {
-            initialBudget -= data.length() + data.padding();
+            initialBudget -= data.reserved();
 
             if (initialBudget < 0)
             {
@@ -666,7 +666,7 @@ public final class WsClientFactory implements StreamFactory
                     .streamId(initialId)
                     .trace(traceId)
                     .groupId(0)
-                    .padding(initialPadding)
+                    .reserved(wsHeaderSize + payloadSize + initialPadding)
                     .payload(p -> p.set((b, o, m) -> wsHeaderSize)
                                    .put(payload.buffer(), payload.offset(), payloadSize)
                                    .set((b, o, l) -> wsHeaderSize +
@@ -798,7 +798,7 @@ public final class WsClientFactory implements StreamFactory
         private void onData(
             DataFW data)
         {
-            replyBudget -= data.length() + data.padding();
+            replyBudget -= data.reserved();
 
             if (replyBudget < 0)
             {

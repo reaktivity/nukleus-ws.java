@@ -15,7 +15,6 @@
  */
 package org.reaktivity.nukleus.ws.internal.stream;
 
-import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
@@ -35,7 +34,6 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
     private MutableDirectBuffer writeBuffer;
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
-    private LongSupplier supplyTraceId;
     private ToIntFunction<String> supplyTypeId;
     private Supplier<BufferPool> supplyBufferPool;
 
@@ -86,14 +84,6 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public StreamFactoryBuilder setTraceSupplier(
-        LongSupplier supplyTraceId)
-    {
-        this.supplyTraceId = supplyTraceId;
-        return this;
-    }
-
-    @Override
     public StreamFactoryBuilder setTypeIdSupplier(
         ToIntFunction<String> supplyTypeId)
     {
@@ -113,7 +103,6 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
                 bufferPool,
                 supplyInitialId,
                 supplyReplyId,
-                supplyTraceId,
                 supplyTypeId);
     }
 }

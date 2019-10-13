@@ -53,8 +53,8 @@
 
     <nukleus.plugin.version>0.42</nukleus.plugin.version>
 
-    <nukleus.ws.spec.version>0.50</nukleus.ws.spec.version>
-    <reaktor.version>0.102</reaktor.version>
+    <nukleus.ws.spec.version>0.51</nukleus.ws.spec.version>
+    <reaktor.version>0.104</reaktor.version>
   </properties>
 
   <dependencies>

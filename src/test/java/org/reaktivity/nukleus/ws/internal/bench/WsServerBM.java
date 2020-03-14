@@ -52,7 +52,7 @@ import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.ws.internal.WsController;
-import org.reaktivity.nukleus.ws.internal.types.ArrayFW;
+import org.reaktivity.nukleus.ws.internal.types.Array32FW;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
@@ -178,7 +178,7 @@ public class WsServerBM
         {
             final MutableDirectBuffer writeBuffer = new UnsafeBuffer(new byte[256]);
 
-            final Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers = hs ->
+            final Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers = hs ->
             {
                 hs.item(h -> h.name(":scheme").value("http"));
                 hs.item(h -> h.name(":method").value("GET"));
@@ -247,7 +247,7 @@ public class WsServerBM
         }
 
         private Flyweight.Builder.Visitor visitHttpBeginEx(
-            Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
+            Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
         {
             return (buffer, offset, limit) ->
                 httpBeginExRW.wrap(buffer, offset, limit)

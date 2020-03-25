@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -50,7 +50,7 @@ import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.ws.internal.WsConfiguration;
 import org.reaktivity.nukleus.ws.internal.WsNukleus;
-import org.reaktivity.nukleus.ws.internal.types.ArrayFW;
+import org.reaktivity.nukleus.ws.internal.types.Array32FW;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
@@ -1202,7 +1202,7 @@ public final class WsClientFactory implements StreamFactory
         long traceId,
         long authorization,
         long affinity,
-        Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
+        Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
     {
         BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
@@ -1217,7 +1217,7 @@ public final class WsClientFactory implements StreamFactory
     }
 
     private Flyweight.Builder.Visitor visitHttpBeginEx(
-        Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
+        Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
     {
         return (buffer, offset, limit) ->
             httpBeginExRW.wrap(buffer, offset, limit)
@@ -1262,7 +1262,7 @@ public final class WsClientFactory implements StreamFactory
                      .sizeof();
     }
 
-    private Consumer<ArrayFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> setHttpHeaders(
+    private Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> setHttpHeaders(
         String scheme,
         String authority,
         String path,

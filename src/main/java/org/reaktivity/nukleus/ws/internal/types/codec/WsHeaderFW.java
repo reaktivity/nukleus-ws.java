@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -105,17 +105,17 @@ public final class WsHeaderFW extends Flyweight
     {
         int maxLength = maxLimit - offset;
         int wsFrameLength = 2;
-        if(maxLength < wsFrameLength)
+        if (maxLength < wsFrameLength)
         {
-           return false;
+            return false;
         }
 
         byte secondByte = buffer.getByte(offset + 1);
         wsFrameLength += lengthSize0(secondByte) - 1;
 
-        if(isMasked(secondByte))
+        if (isMasked(secondByte))
         {
-            wsFrameLength+= 4;
+            wsFrameLength += 4;
         }
 
         return wsFrameLength <= maxLength;

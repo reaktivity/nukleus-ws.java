@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -15,9 +15,6 @@
  */
 package org.reaktivity.nukleus.ws.internal.stream;
 
-import java.util.function.IntUnaryOperator;
-import java.util.function.LongFunction;
-import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
@@ -37,7 +34,6 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
     private MutableDirectBuffer writeBuffer;
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
-    private LongSupplier supplyTraceId;
     private ToIntFunction<String> supplyTypeId;
     private Supplier<BufferPool> supplyBufferPool;
 
@@ -80,32 +76,10 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public WsClientFactoryBuilder setGroupBudgetClaimer(
-        LongFunction<IntUnaryOperator> groupBudgetClaimer)
-    {
-        return this;
-    }
-
-    @Override
-    public WsClientFactoryBuilder setGroupBudgetReleaser(
-        LongFunction<IntUnaryOperator> groupBudgetReleaser)
-    {
-        return this;
-    }
-
-    @Override
     public StreamFactoryBuilder setBufferPoolSupplier(
         Supplier<BufferPool> supplyBufferPool)
     {
         this.supplyBufferPool = supplyBufferPool;
-        return this;
-    }
-
-    @Override
-    public StreamFactoryBuilder setTraceSupplier(
-        LongSupplier supplyTraceId)
-    {
-        this.supplyTraceId = supplyTraceId;
         return this;
     }
 
@@ -129,7 +103,6 @@ public final class WsClientFactoryBuilder implements StreamFactoryBuilder
                 bufferPool,
                 supplyInitialId,
                 supplyReplyId,
-                supplyTraceId,
                 supplyTypeId);
     }
 }

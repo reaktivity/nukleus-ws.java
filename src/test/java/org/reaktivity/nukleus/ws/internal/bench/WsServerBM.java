@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -52,9 +52,9 @@ import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.ws.internal.WsController;
+import org.reaktivity.nukleus.ws.internal.types.Array32FW;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
-import org.reaktivity.nukleus.ws.internal.types.ListFW;
 import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.DataFW;
@@ -110,9 +110,6 @@ public class WsServerBM
         final Random random = new Random();
 
         this.routeId = controller.route(SERVER, "ws#0", "target#0").get();
-
-//        this.source = controller.supplySource("source", Source::new);
-//        this.target = controller.supplyTarget("target", Target::new);
 
         final long sourceRouteId = random.nextLong();
         final long sourceId = random.nextLong();
@@ -181,7 +178,7 @@ public class WsServerBM
         {
             final MutableDirectBuffer writeBuffer = new UnsafeBuffer(new byte[256]);
 
-            final Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers = hs ->
+            final Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers = hs ->
             {
                 hs.item(h -> h.name(":scheme").value("http"));
                 hs.item(h -> h.name(":method").value("GET"));
@@ -191,7 +188,7 @@ public class WsServerBM
                 hs.item(h -> h.name("sec-websocket-key").value("dGhlIHNhbXBsZSBub25jZQ=="));
                 hs.item(h -> h.name("sec-websocket-version").value("13"));
 
-//                hs.item(h -> h.name("sec-websocket-protocol").value(protocol));
+                //hs.item(h -> h.name("sec-websocket-protocol").value(protocol));
             };
 
             // TODO: move to doBegin to avoid writeBuffer overwrite with DataFW
@@ -250,7 +247,7 @@ public class WsServerBM
         }
 
         private Flyweight.Builder.Visitor visitHttpBeginEx(
-            Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
+            Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
         {
             return (buffer, offset, limit) ->
                 httpBeginExRW.wrap(buffer, offset, limit)

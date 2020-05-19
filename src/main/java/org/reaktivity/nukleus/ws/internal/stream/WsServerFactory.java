@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -34,7 +34,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
-import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.ToIntFunction;
 
@@ -51,9 +50,9 @@ import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.ws.internal.WsConfiguration;
 import org.reaktivity.nukleus.ws.internal.WsNukleus;
+import org.reaktivity.nukleus.ws.internal.types.Array32FW;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
-import org.reaktivity.nukleus.ws.internal.types.ListFW;
 import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
 import org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
@@ -119,7 +118,6 @@ public final class WsServerFactory implements StreamFactory
     private final MutableDirectBuffer writeBuffer;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
-    private final LongSupplier supplyTraceId;
 
     private final Long2ObjectHashMap<WsServerConnect> correlations;
     private final MessageFunction<RouteFW> wrapRoute;
@@ -133,14 +131,12 @@ public final class WsServerFactory implements StreamFactory
         BufferPool bufferPool,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId)
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.supplyInitialId = requireNonNull(supplyInitialId);
         this.supplyReplyId = requireNonNull(supplyReplyId);
-        this.supplyTraceId = requireNonNull(supplyTraceId);
         this.correlations = new Long2ObjectHashMap<>();
         this.wrapRoute = this::wrapRoute;
         this.wsTypeId = supplyTypeId.applyAsInt(WsNukleus.NAME);
@@ -176,8 +172,11 @@ public final class WsServerFactory implements StreamFactory
         final BeginFW begin,
         final MessageConsumer sender)
     {
+        final long traceId = begin.traceId();
         final long routeId = begin.routeId();
         final long initialId = begin.streamId();
+        final long authorization = begin.authorization();
+        final long affinity = begin.affinity();
         final OctetsFW extension = begin.extension();
 
         // TODO: need lightweight approach (start)
@@ -204,9 +203,10 @@ public final class WsServerFactory implements StreamFactory
         if (upgrade == null)
         {
             final long newReplyId = supplyReplyId.applyAsLong(initialId);
-            doHttpBegin(sender, routeId, newReplyId, supplyTraceId.getAsLong(), hs -> hs.item(h -> h.name(":status").value("400"))
-                    .item(h -> h.name("connection").value("close")));
-            doHttpEnd(sender, routeId, newReplyId, supplyTraceId.getAsLong());
+            doHttpBegin(sender, routeId, newReplyId, traceId, authorization, affinity,
+                hs -> hs.item(h -> h.name(":status").value("400"))
+                        .item(h -> h.name("connection").value("close")));
+            doHttpEnd(sender, routeId, newReplyId, traceId);
             newStream = (t, b, o, l) -> {};
         }
         else if (key != null &&
@@ -314,6 +314,7 @@ public final class WsServerFactory implements StreamFactory
         private WsServerConnect connect;
 
         private long decodeTraceId;
+        private long decodeAuthorization;
         private DecoderState decodeState;
 
         private MutableDirectBuffer header;
@@ -328,6 +329,7 @@ public final class WsServerFactory implements StreamFactory
 
         private int initialBudget;
         private int initialPadding;
+        public long replyBudgetId;
         private int replyBudget;
         private int replyPadding;
 
@@ -376,7 +378,9 @@ public final class WsServerFactory implements StreamFactory
         }
 
         private void doBegin(
-            long traceId)
+            long traceId,
+            long authorization,
+            long affinity)
         {
             sha1.reset();
             sha1.update(key.getBytes(US_ASCII));
@@ -384,12 +388,14 @@ public final class WsServerFactory implements StreamFactory
             final Encoder encoder = Base64.getEncoder();
             final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
 
-            doHttpBegin(receiver, routeId, replyId, traceId, setHttpHeaders(handshakeHash, protocol));
+            doHttpBegin(receiver, routeId, replyId, traceId, authorization, affinity, setHttpHeaders(handshakeHash, protocol));
             router.setThrottle(replyId, this::handleThrottle);
         }
 
         private void doData(
             long traceId,
+            long authorization,
+            long budgetId,
             OctetsFW payload,
             int flags)
         {
@@ -416,9 +422,10 @@ public final class WsServerFactory implements StreamFactory
             DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
-                    .trace(traceId)
-                    .groupId(0)
-                    .padding(replyPadding)
+                    .traceId(traceId)
+                    .authorization(authorization)
+                    .budgetId(budgetId)
+                    .reserved(wsHeaderSize + payloadSize + replyPadding)
                     .payload(p -> p.set((b, o, m) -> wsHeaderSize)
                                    .put(payload.buffer(), payload.offset(), payloadSize))
                     .build();
@@ -432,7 +439,7 @@ public final class WsServerFactory implements StreamFactory
             final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
-                    .trace(traceId)
+                    .traceId(traceId)
                     .build();
 
             receiver.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
@@ -444,19 +451,21 @@ public final class WsServerFactory implements StreamFactory
             final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
-                    .trace(traceId)
+                    .traceId(traceId)
                     .build();
 
             receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
         }
 
         private void doReset(
-            long traceId)
+            long traceId,
+            long authorization)
         {
             final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(initialId)
-                    .trace(traceId)
+                    .traceId(traceId)
+                    .authorization(authorization)
                     .build();
 
             receiver.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -464,6 +473,8 @@ public final class WsServerFactory implements StreamFactory
 
         private void doWindow(
             long traceId,
+            long authorization,
+            long budgetId,
             int maxBudget,
             int minPadding)
         {
@@ -476,10 +487,11 @@ public final class WsServerFactory implements StreamFactory
                 final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                         .routeId(routeId)
                         .streamId(initialId)
-                        .trace(traceId)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .budgetId(budgetId)
                         .credit(initialCredit)
                         .padding(initialPadding)
-                        .groupId(0)
                         .build();
 
                 receiver.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
@@ -540,22 +552,29 @@ public final class WsServerFactory implements StreamFactory
         private void onBegin(
             BeginFW begin)
         {
-            final long traceId = begin.trace();
-            connect.doBegin(traceId, protocol, scheme, authority, path);
+            final long traceId = begin.traceId();
+            final long authorization = begin.authorization();
+            final long affinity = begin.affinity();
+
+            connect.doBegin(traceId, authorization, affinity, protocol, scheme, authority, path);
         }
 
         private void onData(
             DataFW data)
         {
-            initialBudget -= data.length() + data.padding();
+            final long traceId = data.traceId();
+            final long authorization = data.authorization();
+
+            initialBudget -= data.reserved();
 
             if (initialBudget < 0)
             {
-                doReset(supplyTraceId.getAsLong());
+                doReset(traceId, authorization);
             }
             else
             {
-                decodeTraceId = data.trace();
+                decodeTraceId = traceId;
+                decodeAuthorization = authorization;
 
                 final OctetsFW payload = data.payload();
                 final DirectBuffer buffer = payload.buffer();
@@ -582,32 +601,44 @@ public final class WsServerFactory implements StreamFactory
         private void onEnd(
             EndFW end)
         {
-            final long traceId = end.trace();
-            connect.doEnd(traceId, STATUS_NORMAL_CLOSURE);
+            final long traceId = end.traceId();
+            final long authorization = end.authorization();
+
+            connect.doEnd(traceId, authorization, STATUS_NORMAL_CLOSURE);
         }
 
         private void onAbort(
             AbortFW abort)
         {
-            final long traceId = abort.trace();
-            connect.doAbort(traceId, STATUS_UNEXPECTED_CONDITION);
+            final long traceId = abort.traceId();
+            final long authorization = abort.authorization();
+
+            connect.doAbort(traceId, authorization, STATUS_UNEXPECTED_CONDITION);
         }
 
         private void onWindow(
             WindowFW window)
         {
-            replyBudget += window.credit();
-            replyPadding = window.padding();
+            final long traceId = window.traceId();
+            final long authorization = window.authorization();
+            final long budgetId = window.budgetId();
+            final int credit = window.credit();
+            final int padding = window.padding();
 
-            final long traceId = window.trace();
-            connect.doWindow(traceId, replyBudget, replyPadding);
+            replyBudgetId = budgetId;
+            replyBudget += credit;
+            replyPadding = padding;
+
+            connect.doWindow(traceId, authorization, budgetId, replyBudget, replyPadding);
         }
 
         private void onReset(
             ResetFW reset)
         {
-            final long traceId = reset.trace();
-            connect.doReset(traceId);
+            final long traceId = reset.traceId();
+            final long authorization = reset.authorization();
+
+            connect.doReset(traceId, authorization);
         }
 
         // @return no bytes consumed to assemble websocket header
@@ -693,8 +724,8 @@ public final class WsServerFactory implements StreamFactory
             }
             else
             {
-                doReset(supplyTraceId.getAsLong());
-                connect.doAbort(decodeTraceId, STATUS_PROTOCOL_ERROR);
+                doReset(decodeTraceId, decodeAuthorization);
+                connect.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
             }
 
             return consumed;
@@ -710,7 +741,7 @@ public final class WsServerFactory implements StreamFactory
             final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
             final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
-            connect.doData(decodeTraceId, 0x80, maskingKey, payload);
+            connect.doData(decodeTraceId, decodeAuthorization, 0x80, maskingKey, payload);
 
             payloadProgress += decodeBytes;
             maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
@@ -735,7 +766,7 @@ public final class WsServerFactory implements StreamFactory
             final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
             final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
-            connect.doData(decodeTraceId, 0x81, maskingKey, payload);
+            connect.doData(decodeTraceId, decodeAuthorization, 0x81, maskingKey, payload);
 
             payloadProgress += decodeBytes;
             maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
@@ -758,7 +789,7 @@ public final class WsServerFactory implements StreamFactory
             final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
             final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
-            connect.doData(decodeTraceId, 0x82, maskingKey, payload);
+            connect.doData(decodeTraceId, decodeAuthorization, 0x82, maskingKey, payload);
 
             payloadProgress += decodeBytes;
             maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
@@ -778,8 +809,8 @@ public final class WsServerFactory implements StreamFactory
         {
             if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
             {
-                doReset(supplyTraceId.getAsLong());
-                connect.doAbort(decodeTraceId, STATUS_PROTOCOL_ERROR);
+                doReset(decodeTraceId, decodeAuthorization);
+                connect.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
                 return length;
             }
             else
@@ -803,7 +834,7 @@ public final class WsServerFactory implements StreamFactory
                         code = status.getShort(0, ByteOrder.BIG_ENDIAN);
                     }
                     statusLength = 0;
-                    connect.doEnd(decodeTraceId, code);
+                    connect.doEnd(decodeTraceId, decodeAuthorization, code);
                     this.decodeState = this::decodeHeader;
                 }
 
@@ -818,8 +849,8 @@ public final class WsServerFactory implements StreamFactory
         {
             if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
             {
-                doReset(supplyTraceId.getAsLong());
-                connect.doAbort(decodeTraceId, STATUS_PROTOCOL_ERROR);
+                doReset(decodeTraceId, decodeAuthorization);
+                connect.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
                 return length;
             }
             else
@@ -845,8 +876,8 @@ public final class WsServerFactory implements StreamFactory
             final int offset,
             final int length)
         {
-            doReset(supplyTraceId.getAsLong());
-            connect.doAbort(decodeTraceId, STATUS_PROTOCOL_ERROR);
+            doReset(decodeTraceId, decodeAuthorization);
+            connect.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
             return length;
         }
 
@@ -880,6 +911,7 @@ public final class WsServerFactory implements StreamFactory
 
         private int initialBudget;
         private int initialPadding;
+        private long initialBudgetId;
         private int replyBudget;
 
         private WsServerAccept accept;
@@ -901,6 +933,8 @@ public final class WsServerFactory implements StreamFactory
 
         private void doBegin(
             long traceId,
+            long authorization,
+            long affinity,
             String protocol,
             String scheme,
             String authority,
@@ -909,7 +943,9 @@ public final class WsServerFactory implements StreamFactory
             final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(initialId)
-                    .trace(traceId)
+                    .traceId(traceId)
+                    .authorization(authorization)
+                    .affinity(affinity)
                     .extension(e -> e.set(visitWsBeginEx(protocol, scheme, authority, path)))
                     .build();
 
@@ -920,6 +956,7 @@ public final class WsServerFactory implements StreamFactory
 
         private void doData(
             long traceId,
+            long authorization,
             int flags,
             int maskingKey,
             OctetsFW payload)
@@ -943,9 +980,10 @@ public final class WsServerFactory implements StreamFactory
             final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(initialId)
-                    .trace(traceId)
-                    .groupId(0)
-                    .padding(initialPadding)
+                    .traceId(traceId)
+                    .authorization(authorization)
+                    .budgetId(initialBudgetId)
+                    .reserved(payload.sizeof() + initialPadding)
                     .payload(p -> p.set(payload).set((b, o, l) -> xor(b, o, o + capacity, maskingKey)))
                     .extension(e -> e.set(visitWsDataEx(flags)))
                     .build();
@@ -955,12 +993,14 @@ public final class WsServerFactory implements StreamFactory
 
         private void doEnd(
             long traceId,
+            long authorization,
             short code)
         {
             final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(initialId)
-                    .trace(traceId)
+                    .traceId(traceId)
+                    .authorization(authorization)
                     .extension(e -> e.set(visitWsEndEx(code)))
                     .build();
 
@@ -969,25 +1009,29 @@ public final class WsServerFactory implements StreamFactory
 
         private void doAbort(
             long traceId,
+            long authorization,
             short code)
         {
             // TODO: WsAbortEx
             final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(initialId)
-                    .trace(traceId)
+                    .traceId(traceId)
+                    .authorization(authorization)
                     .build();
 
             receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
         }
 
         private void doReset(
-            long traceId)
+            long traceId,
+            long authorization)
         {
             final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
-                    .trace(traceId)
+                    .traceId(traceId)
+                    .authorization(authorization)
                     .build();
 
             receiver.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -995,6 +1039,8 @@ public final class WsServerFactory implements StreamFactory
 
         private void doWindow(
             long traceId,
+            long authorization,
+            long budgetId,
             int maxBudget,
             int minPadding)
         {
@@ -1007,10 +1053,11 @@ public final class WsServerFactory implements StreamFactory
                 final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                         .routeId(routeId)
                         .streamId(replyId)
-                        .trace(traceId)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .budgetId(budgetId)
                         .credit(replyCredit)
                         .padding(replyPadding)
-                        .groupId(0)
                         .build();
 
                 receiver.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
@@ -1071,19 +1118,25 @@ public final class WsServerFactory implements StreamFactory
         private void onBegin(
             BeginFW begin)
         {
-            final long traceId = begin.trace();
+            final long traceId = begin.traceId();
+            final long authorization = begin.authorization();
+            final long affinity = begin.affinity();
 
-            accept.doBegin(traceId);
+            accept.doBegin(traceId, authorization, affinity);
         }
 
         private void onData(
             DataFW data)
         {
-            replyBudget -= data.length() + data.padding();
+            final long traceId = data.traceId();
+            final long authorization = data.authorization();
+            final long budgetId = data.budgetId();
+
+            replyBudget -= data.reserved();
 
             if (replyBudget < 0)
             {
-                doReset(supplyTraceId.getAsLong());
+                doReset(traceId, authorization);
             }
             else
             {
@@ -1097,45 +1150,52 @@ public final class WsServerFactory implements StreamFactory
                     flags = wsDataEx.flags();
                 }
 
-                final long traceId = data.trace();
-                accept.doData(traceId, payload, flags);
+                accept.doData(traceId, authorization, budgetId, payload, flags);
             }
         }
 
         private void onEnd(
             EndFW end)
         {
-            final long traceId = end.trace();
+            final long traceId = end.traceId();
+            final long authorization = end.authorization();
+
             final OctetsFW payload = payloadRO.wrap(CLOSE_PAYLOAD, 0, 0);
 
-            accept.doData(traceId, payload, 0x88);
+            accept.doData(traceId, authorization, accept.replyBudgetId, payload, 0x88);
             accept.doEnd(traceId);
         }
 
         private void onAbort(
             AbortFW abort)
         {
-            final long traceId = abort.trace();
+            final long traceId = abort.traceId();
             accept.doAbort(traceId);
         }
 
         private void onWindow(
             WindowFW window)
         {
-            final int connectCredit = window.credit();
+            final long traceId = window.traceId();
+            final long authorization = window.authorization();
+            final long budgetId = window.budgetId();
+            final int credit = window.credit();
+            final int padding = window.padding();
 
-            initialBudget += connectCredit;
-            initialPadding = window.padding();
+            initialBudgetId = budgetId;
+            initialBudget += credit;
+            initialPadding = padding;
 
-            final long traceId = window.trace();
-            accept.doWindow(traceId, initialBudget, initialPadding);
+            accept.doWindow(traceId, authorization, budgetId, initialBudget, initialPadding);
         }
 
         private void onReset(
             ResetFW reset)
         {
-            final long traceId = reset.trace();
-            accept.doReset(traceId);
+            final long traceId = reset.traceId();
+            final long authorization = reset.authorization();
+
+            accept.doReset(traceId, authorization);
 
             correlations.remove(replyId);
         }
@@ -1146,12 +1206,16 @@ public final class WsServerFactory implements StreamFactory
         long routeId,
         long streamId,
         long traceId,
-        Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
+        long authorization,
+        long affinity,
+        Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> mutator)
     {
         BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(traceId)
+                .traceId(traceId)
+                .authorization(authorization)
+                .affinity(affinity)
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();
 
@@ -1159,7 +1223,7 @@ public final class WsServerFactory implements StreamFactory
     }
 
     private Flyweight.Builder.Visitor visitHttpBeginEx(
-        Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
+        Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> headers)
     {
         return (buffer, offset, limit) ->
             httpBeginExRW.wrap(buffer, offset, limit)
@@ -1178,7 +1242,7 @@ public final class WsServerFactory implements StreamFactory
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(traceId)
+                .traceId(traceId)
                 .build();
 
         receiver.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
@@ -1225,7 +1289,7 @@ public final class WsServerFactory implements StreamFactory
                      .sizeof();
     }
 
-    private Consumer<ListFW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> setHttpHeaders(
+    private Consumer<Array32FW.Builder<HttpHeaderFW.Builder, HttpHeaderFW>> setHttpHeaders(
         String handshakeHash,
         String protocol)
     {
@@ -1262,7 +1326,7 @@ public final class WsServerFactory implements StreamFactory
     {
         int index = -1;
 
-        for (int i=0; i < array.length; i++)
+        for (int i = 0; i < array.length; i++)
         {
             if (Objects.equals(array[i], candidate))
             {
@@ -1283,7 +1347,7 @@ public final class WsServerFactory implements StreamFactory
 
         if (isMasked(secondByte))
         {
-            wsHeaderLength+= 4;
+            wsHeaderLength += 4;
         }
 
         return wsHeaderLength;

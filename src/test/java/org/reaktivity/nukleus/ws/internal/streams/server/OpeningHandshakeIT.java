@@ -72,4 +72,14 @@ public class OpeningHandshakeIT
     {
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/server.ext/controller",
+        "${client}/request.header.sec.websocket.protocol.negotiated/handshake.request",
+        "${server}/connection.established.extension/handshake.response" })
+    public void shouldEstablishConnectionWithRequestHeaderSecWebSocketProtocolNegotiated() throws Exception
+    {
+        k3po.finish();
+    }
 }

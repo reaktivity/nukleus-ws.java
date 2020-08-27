@@ -1317,7 +1317,7 @@ public final class WsServerFactory implements StreamFactory
     private static String[] parseProtocols(
         final String protocols)
     {
-        return (protocols != null) ? protocols.split("\\s*,") : null;
+        return (protocols != null) ? protocols.split("\\s*,\\s*") : null;
     }
 
     private static int arrayIndexOf(

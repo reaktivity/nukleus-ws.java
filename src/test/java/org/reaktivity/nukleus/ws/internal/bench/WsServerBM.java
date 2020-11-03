@@ -55,7 +55,6 @@ import org.reaktivity.nukleus.ws.internal.WsController;
 import org.reaktivity.nukleus.ws.internal.types.Array32FW;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
-import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.HttpBeginExFW;
@@ -293,7 +292,7 @@ public class WsServerBM
             final BeginFW begin = beginRO.wrap(buffer, index, index + length);
             final long streamId = begin.streamId();
             final long routeId = begin.routeId();
-            doWindow(streamId, routeId, 8192);
+            doWindow(streamId, routeId, 0L, 0L);
 
             this.readHandler = this::afterBegin;
         }
@@ -307,21 +306,24 @@ public class WsServerBM
             final DataFW data = dataRO.wrap(buffer, index, index + length);
             final long routeId = data.routeId();
             final long streamId = data.streamId();
-            final OctetsFW payload = data.payload();
+            final long sequence = data.sequence();
+            final int reserved = data.reserved();
 
-            final int update = payload.sizeof();
-            doWindow(streamId, routeId, update);
+            doWindow(streamId, routeId, sequence + reserved, sequence + reserved);
         }
 
         private boolean doWindow(
             final long routeId,
             final long streamId,
-            final int credit)
+            final long sequence,
+            final long acknowledge)
         {
             final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(streamId)
-                    .credit(credit)
+                    .sequence(sequence)
+                    .acknowledge(acknowledge)
+                    .maximum(8192)
                     .padding(0)
                     .build();
 

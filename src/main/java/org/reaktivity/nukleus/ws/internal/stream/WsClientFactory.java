@@ -59,8 +59,10 @@ import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.ws.internal.types.control.WsRouteExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.BeginFW;
+import org.reaktivity.nukleus.ws.internal.types.stream.ChallengeFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.EndFW;
+import org.reaktivity.nukleus.ws.internal.types.stream.FlushFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.HttpBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WindowFW;
@@ -90,14 +92,17 @@ public final class WsClientFactory implements StreamFactory
     private final DataFW dataRO = new DataFW();
     private final EndFW endRO = new EndFW();
     private final AbortFW abortRO = new AbortFW();
+    private final FlushFW flushRO = new FlushFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
     private final EndFW.Builder endRW = new EndFW.Builder();
     private final AbortFW.Builder abortRW = new AbortFW.Builder();
+    private final FlushFW.Builder flushRW = new FlushFW.Builder();
 
     private final WindowFW windowRO = new WindowFW();
     private final ResetFW resetRO = new ResetFW();
+    private final ChallengeFW challengeRO = new ChallengeFW();
 
     private final WsBeginExFW.Builder wsBeginExRW = new WsBeginExFW.Builder();
     private final WsDataExFW.Builder wsDataExRW = new WsDataExFW.Builder();
@@ -105,6 +110,7 @@ public final class WsClientFactory implements StreamFactory
 
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
+    private final ChallengeFW.Builder challengeRW = new ChallengeFW.Builder();
 
     private final OctetsFW payloadRO = new OctetsFW();
 
@@ -451,6 +457,27 @@ public final class WsClientFactory implements StreamFactory
             receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
         }
 
+        private void doFlush(
+            long traceId,
+            long authorization,
+            long budgetId,
+            int reserved)
+        {
+            final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .routeId(routeId)
+                    .streamId(replyId)
+                    .sequence(replySeq)
+                    .acknowledge(replyAck)
+                    .maximum(replyMax)
+                    .traceId(traceId)
+                    .authorization(authorization)
+                    .budgetId(budgetId)
+                    .reserved(reserved)
+                    .build();
+
+            receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
+        }
+
         private void doReset(
             long traceId,
             long authorization)
@@ -466,6 +493,25 @@ public final class WsClientFactory implements StreamFactory
                     .build();
 
             receiver.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
+        }
+
+        private void doChallenge(
+            long traceId,
+            long authorization,
+            OctetsFW extension)
+        {
+            final ChallengeFW challenge = challengeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .routeId(routeId)
+                    .streamId(initialId)
+                    .sequence(initialSeq)
+                    .acknowledge(initialAck)
+                    .maximum(initialMax)
+                    .traceId(traceId)
+                    .authorization(authorization)
+                    .extension(extension)
+                    .build();
+
+            receiver.accept(challenge.typeId(), challenge.buffer(), challenge.offset(), challenge.sizeof());
         }
 
         private void doWindow(
@@ -524,6 +570,10 @@ public final class WsClientFactory implements StreamFactory
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
                 onAbort(abort);
                 break;
+            case FlushFW.TYPE_ID:
+                final FlushFW flush = flushRO.wrap(buffer, index, index + length);
+                onFlush(flush);
+                break;
             default:
                 break;
             }
@@ -544,6 +594,10 @@ public final class WsClientFactory implements StreamFactory
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
                 onReset(reset);
+                break;
+            case ChallengeFW.TYPE_ID:
+                final ChallengeFW challenge = challengeRO.wrap(buffer, index, index + length);
+                onChallenge(challenge);
                 break;
             default:
                 // ignore
@@ -648,6 +702,26 @@ public final class WsClientFactory implements StreamFactory
             connect.doAbort(traceId, authorization);
         }
 
+        private void onFlush(
+            FlushFW flush)
+        {
+            final long sequence = flush.sequence();
+            final long acknowledge = flush.acknowledge();
+            final long traceId = flush.traceId();
+            final long authorization = flush.authorization();
+            final long budgetId = flush.budgetId();
+            final int reserved = flush.reserved();
+
+            assert acknowledge <= sequence;
+            assert sequence >= initialSeq;
+
+            initialSeq = sequence;
+
+            assert initialAck <= initialSeq;
+
+            connect.doFlush(traceId, authorization, budgetId, reserved);
+        }
+
         private void onWindow(
             WindowFW window)
         {
@@ -688,6 +762,25 @@ public final class WsClientFactory implements StreamFactory
             assert replyAck <= replySeq;
 
             connect.doReset(traceId, authorization);
+        }
+
+        private void onChallenge(
+            ChallengeFW challenge)
+        {
+            final long sequence = challenge.sequence();
+            final long acknowledge = challenge.acknowledge();
+            final long authorization = challenge.authorization();
+            final long traceId = challenge.traceId();
+            final OctetsFW extension = challenge.extension();
+
+            assert acknowledge <= sequence;
+            assert acknowledge >= replyAck;
+
+            replyAck = acknowledge;
+
+            assert replyAck <= replySeq;
+
+            connect.doChallenge(traceId, authorization, extension);
         }
     }
 
@@ -841,6 +934,27 @@ public final class WsClientFactory implements StreamFactory
             receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
         }
 
+        private void doFlush(
+            long traceId,
+            long authorization,
+            long budgetId,
+            int reserved)
+        {
+            final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .routeId(routeId)
+                    .streamId(initialId)
+                    .sequence(initialSeq)
+                    .acknowledge(initialAck)
+                    .maximum(initialMax)
+                    .traceId(traceId)
+                    .authorization(authorization)
+                    .budgetId(budgetId)
+                    .reserved(reserved)
+                    .build();
+
+            receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
+        }
+
         private void doReset(
             long traceId,
             long authorization)
@@ -856,6 +970,25 @@ public final class WsClientFactory implements StreamFactory
                     .build();
 
             receiver.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
+        }
+
+        private void doChallenge(
+            long traceId,
+            long authorization,
+            OctetsFW extension)
+        {
+            final ChallengeFW challenge = challengeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                    .routeId(routeId)
+                    .streamId(replyId)
+                    .sequence(replySeq)
+                    .acknowledge(replyAck)
+                    .maximum(replyMax)
+                    .traceId(traceId)
+                    .authorization(authorization)
+                    .extension(extension)
+                    .build();
+
+            receiver.accept(challenge.typeId(), challenge.buffer(), challenge.offset(), challenge.sizeof());
         }
 
         private void doWindow(
@@ -912,6 +1045,10 @@ public final class WsClientFactory implements StreamFactory
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
                 onAbort(abort);
                 break;
+            case FlushFW.TYPE_ID:
+                final FlushFW flush = flushRO.wrap(buffer, index, index + length);
+                onFlush(flush);
+                break;
             default:
                 break;
             }
@@ -932,6 +1069,10 @@ public final class WsClientFactory implements StreamFactory
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
                 onReset(reset);
+                break;
+            case ChallengeFW.TYPE_ID:
+                final ChallengeFW challenge = challengeRO.wrap(buffer, index, index + length);
+                onChallenge(challenge);
                 break;
             default:
                 // ignore
@@ -1054,6 +1195,30 @@ public final class WsClientFactory implements StreamFactory
             }
         }
 
+        private void onFlush(
+            FlushFW flush)
+        {
+            if (accept != null)
+            {
+                final long sequence = flush.sequence();
+                final long acknowledge = flush.acknowledge();
+                final long traceId = flush.traceId();
+                final long authorization = flush.authorization();
+                final long budgetId = flush.budgetId();
+                final int reserved = flush.reserved();
+
+                assert acknowledge <= sequence;
+                assert sequence >= replySeq;
+                assert acknowledge <= replyAck;
+
+                replySeq = sequence;
+
+                assert replyAck <= replySeq;
+
+                accept.doFlush(traceId, authorization, budgetId, reserved);
+            }
+        }
+
         private void onWindow(
             WindowFW window)
         {
@@ -1089,6 +1254,16 @@ public final class WsClientFactory implements StreamFactory
             accept.doReset(traceId, authorization);
 
             correlations.remove(replyId);
+        }
+
+        private void onChallenge(
+            ChallengeFW challenge)
+        {
+            final long traceId = challenge.traceId();
+            final long authorization = challenge.authorization();
+            final OctetsFW extension = challenge.extension();
+
+            accept.doChallenge(traceId, authorization, extension);
         }
 
         // @return no bytes consumed to assemble websocket header

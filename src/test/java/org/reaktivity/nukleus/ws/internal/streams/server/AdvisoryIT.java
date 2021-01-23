@@ -32,12 +32,12 @@ import org.reaktivity.reaktor.test.ReaktorRule;
 /**
  * RFC-6455, section 5.2 "Base Framing Protocol"
  */
-public class FlowControlIT
+public class AdvisoryIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/flowcontrol")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/flowcontrol");
+            .addScriptRoot("client", "org/reaktivity/specification/ws/advise")
+            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/advise");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -57,11 +57,40 @@ public class FlowControlIT
     @Test
     @Specification({
         "${route}/server/controller",
-        "${client}/echo.payload.with.padding/client",
-        "${server}/echo.payload.with.padding/server" })
-    public void shouldEchoPayloadWithPadding() throws Exception
+        "${client}/server.sent.flush/client",
+        "${server}/server.sent.flush/server" })
+    public void shouldReceiveServerSentFlush() throws Exception
     {
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/server/controller",
+        "${client}/client.sent.flush/client",
+        "${server}/client.sent.flush/server" })
+    public void shouldReceiveClientSentFlush() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/server/controller",
+        "${client}/server.sent.challenge/client",
+        "${server}/server.sent.challenge/server" })
+    public void shouldReceiveServerSentChallenge() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/server/controller",
+        "${client}/client.sent.challenge/client",
+        "${server}/client.sent.challenge/server" })
+    public void shouldReceiveClientSentChallenge() throws Exception
+    {
+        k3po.finish();
+    }
 }

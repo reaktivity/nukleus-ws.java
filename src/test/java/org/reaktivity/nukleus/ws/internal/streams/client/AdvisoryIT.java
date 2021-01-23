@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal.streams.server;
+package org.reaktivity.nukleus.ws.internal.streams.client;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
@@ -26,18 +26,17 @@ import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 /**
  * RFC-6455, section 5.2 "Base Framing Protocol"
  */
-public class FlowControlIT
+public class AdvisoryIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/flowcontrol")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/flowcontrol");
+            .addScriptRoot("client", "org/reaktivity/specification/nukleus/ws/streams/advise")
+            .addScriptRoot("server", "org/reaktivity/specification/ws/advise");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -48,7 +47,6 @@ public class FlowControlIT
         .counterValuesBufferCapacity(4096)
         .nukleus("ws"::equals)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
-        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .clean();
 
     @Rule
@@ -56,12 +54,21 @@ public class FlowControlIT
 
     @Test
     @Specification({
-        "${route}/server/controller",
-        "${client}/echo.payload.with.padding/client",
-        "${server}/echo.payload.with.padding/server" })
-    public void shouldEchoPayloadWithPadding() throws Exception
+        "${route}/client/controller",
+        "${client}/server.sent.flush/client",
+        "${server}/server.sent.flush/server" })
+    public void shouldReceiveServerSentFlush() throws Exception
     {
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/client.sent.flush/client",
+        "${server}/client.sent.flush/server" })
+    public void shouldReceiveClientSentFlush() throws Exception
+    {
+        k3po.finish();
+    }
 }

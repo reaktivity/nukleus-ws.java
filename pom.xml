@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.reaktivity</groupId>
   <artifactId>nukleus-ws</artifactId>
-  <version>0.76</version>
+  <version>0.77</version>
   <name>WebSocket Nukleus Implementation</name>
   <description>WebSocket Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-ws.java</url>
@@ -42,19 +42,19 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <checkstyle.config.location>src/conf/checkstyle/configuration.xml</checkstyle.config.location>
     <checkstyle.suppressions.location>src/conf/checkstyle/suppressions.xml</checkstyle.suppressions.location>
-    <jacoco.coverage.ratio>0.76</jacoco.coverage.ratio>
+    <jacoco.coverage.ratio>0.73</jacoco.coverage.ratio>
     <jacoco.missed.count>0</jacoco.missed.count>
 
-    <junit.version>4.12</junit.version>
+    <junit.version>4.13.1</junit.version>
     <jmh.version>1.17.4</jmh.version>
     <jmh.profilers.version>0.1.3</jmh.profilers.version>
 
-    <k3po.version>3.0.0</k3po.version>
+    <k3po.version>3.1.0</k3po.version>
 
-    <nukleus.plugin.version>0.64</nukleus.plugin.version>
+    <nukleus.plugin.version>0.72</nukleus.plugin.version>
 
-    <nukleus.ws.spec.version>0.56</nukleus.ws.spec.version>
-    <reaktor.version>0.140</reaktor.version>
+    <nukleus.ws.spec.version>0.57</nukleus.ws.spec.version>
+    <reaktor.version>0.155</reaktor.version>
   </properties>
 
   <dependencies>
@@ -168,10 +168,7 @@
         <artifactId>maven-checkstyle-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
-          <sourceDirectories>
-            <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
-            <sourceDirectory>${project.build.testSourceDirectory}</sourceDirectory>
-          </sourceDirectories>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
         </configuration>
         <executions>
           <execution>
@@ -197,7 +194,7 @@
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
-        <version>0.8.5</version>
+        <version>0.8.6</version>
         <configuration>
           <excludes>
             <exclude>org/reaktivity/nukleus/ws/internal/types/**/*.class</exclude>
@@ -377,6 +374,9 @@
                     <requireReleaseDeps>
                       <message>No Snapshots Allowed!</message>
                     </requireReleaseDeps>
+                    <requireJavaVersion>
+                      <version>[9,10)</version>
+                    </requireJavaVersion>
                   </rules>
                 </configuration>
               </execution>

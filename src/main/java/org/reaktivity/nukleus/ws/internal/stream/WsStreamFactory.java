@@ -13,23 +13,16 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal;
+package org.reaktivity.nukleus.ws.internal.stream;
 
-import org.reaktivity.reaktor.nukleus.Configuration;
-import org.reaktivity.reaktor.nukleus.NukleusFactorySpi;
+import org.reaktivity.reaktor.config.Binding;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
-public final class WsNukleusFactorySpi implements NukleusFactorySpi
+public interface WsStreamFactory extends StreamFactory
 {
-    @Override
-    public String name()
-    {
-        return WsNukleus.NAME;
-    }
+    void attach(
+        Binding binding);
 
-    @Override
-    public WsNukleus create(
-        Configuration config)
-    {
-        return new WsNukleus(new WsConfiguration(config));
-    }
+    void detach(
+        long bindingId);
 }

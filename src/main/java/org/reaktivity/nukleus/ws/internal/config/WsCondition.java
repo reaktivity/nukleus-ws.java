@@ -13,14 +13,26 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-module org.reaktivity.nukleus.ws
+package org.reaktivity.nukleus.ws.internal.config;
+
+import org.reaktivity.reaktor.config.Condition;
+
+public final class WsCondition extends Condition
 {
-    requires org.reaktivity.nukleus;
-    requires com.google.gson;
+    public final String protocol;
+    public final String scheme;
+    public final String authority;
+    public final String path;
 
-    provides org.reaktivity.nukleus.NukleusFactorySpi
-        with org.reaktivity.nukleus.ws.internal.WsNukleusFactorySpi;
-
-    provides org.reaktivity.nukleus.ControllerFactorySpi
-        with org.reaktivity.nukleus.ws.internal.WsControllerFactorySpi;
+    public WsCondition(
+        String protocol,
+        String scheme,
+        String authority,
+        String path)
+    {
+        this.protocol = protocol;
+        this.scheme = scheme;
+        this.authority = authority;
+        this.path = path;
+    }
 }

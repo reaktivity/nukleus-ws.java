@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.ws.internal.streams.client;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -27,6 +26,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configuration;
 
 /**
  * RFC-6455, section 4.1 "Client-Side Requirements"
@@ -35,9 +35,8 @@ import org.reaktivity.reaktor.test.ReaktorRule;
 public class OpeningHandshakeIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/nukleus/ws/streams/opening")
-            .addScriptRoot("server", "org/reaktivity/specification/ws/opening");
+        .addScriptRoot("app", "org/reaktivity/specification/nukleus/ws/streams/application/opening")
+        .addScriptRoot("net", "org/reaktivity/specification/nukleus/ws/streams/network/opening");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -46,28 +45,28 @@ public class OpeningHandshakeIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
-        .nukleus("ws"::equals)
-        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .configurationRoot("org/reaktivity/specification/nukleus/ws/config")
+        .external("net#0")
         .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
+    @Configuration("client.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/connection.established/handshake.request",
-        "${server}/connection.established/handshake.response" })
+        "${app}/connection.established/handshake.request",
+        "${net}/connection.established/handshake.response" })
     public void shouldEstablishConnection() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.json")
     @Specification({
-        "${route}/client.ext/controller",
-        "${client}/connection.established/handshake.request",
-        "${server}/request.header.sec.websocket.protocol/handshake.response" })
+        "${app}/connection.established/handshake.request",
+        "${net}/request.header.sec.websocket.protocol/handshake.response" })
     public void shouldEstablishConnectionWithRequestHeaderSecWebSocketProtocol() throws Exception
     {
         k3po.finish();

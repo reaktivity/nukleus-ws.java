@@ -15,7 +15,7 @@
  */
 package org.reaktivity.nukleus.ws.internal;
 
-import org.reaktivity.nukleus.Configuration;
+import org.reaktivity.reaktor.nukleus.Configuration;
 
 public class WsConfiguration extends Configuration
 {

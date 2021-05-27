@@ -13,23 +13,29 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal;
+package org.reaktivity.nukleus.ws.internal.config;
 
-import org.reaktivity.reaktor.nukleus.Configuration;
-import org.reaktivity.reaktor.nukleus.NukleusFactorySpi;
+import static java.util.stream.Collectors.toList;
 
-public final class WsNukleusFactorySpi implements NukleusFactorySpi
+import java.util.List;
+
+import org.reaktivity.reaktor.config.Options;
+import org.reaktivity.reaktor.config.Route;
+
+public final class WsRoute extends Options
 {
-    @Override
-    public String name()
-    {
-        return WsNukleus.NAME;
-    }
+    public final long id;
+    public final int order;
+    public final List<WsMatcher> when;
 
-    @Override
-    public WsNukleus create(
-        Configuration config)
+    public WsRoute(
+        Route route)
     {
-        return new WsNukleus(new WsConfiguration(config));
+        this.id = route.id;
+        this.order = route.order;
+        this.when = route.when.stream()
+            .map(WsCondition.class::cast)
+            .map(WsMatcher::new)
+            .collect(toList());
     }
 }

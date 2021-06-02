@@ -17,7 +17,7 @@ module org.reaktivity.nukleus.ws
 {
     requires org.reaktivity.reaktor;
 
-    provides org.reaktivity.nukleus.NukleusFactorySpi
+    provides org.reaktivity.reaktor.nukleus.NukleusFactorySpi
         with org.reaktivity.nukleus.ws.internal.WsNukleusFactorySpi;
 
     provides org.reaktivity.reaktor.config.OptionsAdapterSpi

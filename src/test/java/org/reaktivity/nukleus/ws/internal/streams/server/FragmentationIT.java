@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.ws.internal.streams.server;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -27,6 +26,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configuration;
 
 /**
  * RFC-6455, section 5.2 "Base Framing Protocol"
@@ -34,9 +34,8 @@ import org.reaktivity.reaktor.test.ReaktorRule;
 public class FragmentationIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/fragmentation")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/fragmentation");
+        .addScriptRoot("net", "org/reaktivity/specification/nukleus/ws/streams/network/fragmentation")
+        .addScriptRoot("app", "org/reaktivity/specification/nukleus/ws/streams/application/fragmentation");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -45,18 +44,18 @@ public class FragmentationIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
-        .nukleus("ws"::equals)
-        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .configurationRoot("org/reaktivity/specification/nukleus/ws/config")
+        .external("app#0")
         .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
+    @Configuration("server.json")
     @Specification({
-        "${route}/server/controller",
-        "${client}/client.echo.binary.payload.length.125.fragmented/handshake.request.and.frames",
-        "${server}/echo.binary.payload.length.125.fragmented/handshake.response.and.frame" })
+        "${net}/client.echo.binary.payload.length.125.fragmented/handshake.request.and.frames",
+        "${app}/echo.binary.payload.length.125.fragmented/handshake.response.and.frame" })
     public void shouldEchoClientSendBinaryFrameWithPayloadFragmented() throws Exception
     {
         k3po.finish();

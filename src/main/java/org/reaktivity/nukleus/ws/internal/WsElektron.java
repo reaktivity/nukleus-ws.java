@@ -15,41 +15,64 @@
  */
 package org.reaktivity.nukleus.ws.internal;
 
-import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
-import static org.reaktivity.nukleus.route.RouteKind.SERVER;
+import static org.reaktivity.reaktor.config.Role.CLIENT;
+import static org.reaktivity.reaktor.config.Role.SERVER;
 
 import java.util.EnumMap;
 import java.util.Map;
 
-import org.reaktivity.nukleus.Elektron;
-import org.reaktivity.nukleus.route.RouteKind;
-import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
-import org.reaktivity.nukleus.ws.internal.stream.WsClientFactoryBuilder;
-import org.reaktivity.nukleus.ws.internal.stream.WsServerFactoryBuilder;
+import org.reaktivity.nukleus.ws.internal.stream.WsClientFactory;
+import org.reaktivity.nukleus.ws.internal.stream.WsServerFactory;
+import org.reaktivity.nukleus.ws.internal.stream.WsStreamFactory;
+import org.reaktivity.reaktor.config.Binding;
+import org.reaktivity.reaktor.config.Role;
+import org.reaktivity.reaktor.nukleus.Elektron;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
 final class WsElektron implements Elektron
 {
-    private final Map<RouteKind, StreamFactoryBuilder> buildersByKind;
+    private final Map<Role, WsStreamFactory> factories;
 
     WsElektron(
-        WsConfiguration config)
+        WsConfiguration config,
+        ElektronContext context)
     {
-        final EnumMap<RouteKind, StreamFactoryBuilder> buildersByKind = new EnumMap<>(RouteKind.class);
-        buildersByKind.put(SERVER, new WsServerFactoryBuilder(config));
-        buildersByKind.put(CLIENT, new WsClientFactoryBuilder(config));
-        this.buildersByKind = buildersByKind;
+        final Map<Role, WsStreamFactory> factories = new EnumMap<>(Role.class);
+        factories.put(SERVER, new WsServerFactory(config, context));
+        factories.put(CLIENT, new WsClientFactory(config, context));
+        this.factories = factories;
     }
 
     @Override
-    public StreamFactoryBuilder streamFactoryBuilder(
-        RouteKind kind)
+    public StreamFactory attach(
+        Binding binding)
     {
-        return buildersByKind.get(kind);
+        WsStreamFactory factory = factories.get(binding.kind);
+
+        if (factory != null)
+        {
+            factory.attach(binding);
+        }
+
+        return factory;
+    }
+
+    @Override
+    public void detach(
+        Binding binding)
+    {
+        WsStreamFactory factory = factories.get(binding.kind);
+
+        if (factory != null)
+        {
+            factory.detach(binding.id);
+        }
     }
 
     @Override
     public String toString()
     {
-        return String.format("%s %s", getClass().getSimpleName(), buildersByKind);
+        return String.format("%s %s", getClass().getSimpleName(), factories);
     }
 }

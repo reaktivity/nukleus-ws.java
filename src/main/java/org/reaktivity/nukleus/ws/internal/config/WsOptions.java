@@ -13,23 +13,26 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.ws.internal;
+package org.reaktivity.nukleus.ws.internal.config;
 
-import org.reaktivity.reaktor.nukleus.Configuration;
-import org.reaktivity.reaktor.nukleus.NukleusFactorySpi;
+import org.reaktivity.reaktor.config.Options;
 
-public final class WsNukleusFactorySpi implements NukleusFactorySpi
+public final class WsOptions extends Options
 {
-    @Override
-    public String name()
-    {
-        return WsNukleus.NAME;
-    }
+    public String protocol;
+    public String scheme;
+    public String authority;
+    public String path;
 
-    @Override
-    public WsNukleus create(
-        Configuration config)
+    public WsOptions(
+        String protocol,
+        String scheme,
+        String authority,
+        String path)
     {
-        return new WsNukleus(new WsConfiguration(config));
+        this.protocol = protocol;
+        this.scheme = scheme;
+        this.authority = authority;
+        this.path = path;
     }
 }

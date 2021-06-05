@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.ws.internal.streams.server;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -28,6 +27,7 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configuration;
 
 /**
  * RFC-6455, section 5.2 "Base Framing Protocol"
@@ -35,9 +35,8 @@ import org.reaktivity.reaktor.test.ReaktorRule;
 public class AdvisoryIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/ws/control/route")
-            .addScriptRoot("client", "org/reaktivity/specification/ws/advise")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/ws/streams/advise");
+        .addScriptRoot("net", "org/reaktivity/specification/nukleus/ws/streams/network/advise")
+        .addScriptRoot("app", "org/reaktivity/specification/nukleus/ws/streams/application/advise");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
@@ -46,8 +45,8 @@ public class AdvisoryIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
-        .nukleus("ws"::equals)
-        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .configurationRoot("org/reaktivity/specification/nukleus/ws/config")
+        .external("app#0")
         .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .clean();
 
@@ -55,40 +54,40 @@ public class AdvisoryIT
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
+    @Configuration("server.json")
     @Specification({
-        "${route}/server/controller",
-        "${client}/server.sent.flush/client",
-        "${server}/server.sent.flush/server" })
+        "${net}/server.sent.flush/client",
+        "${app}/server.sent.flush/server" })
     public void shouldReceiveServerSentFlush() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("server.json")
     @Specification({
-        "${route}/server/controller",
-        "${client}/client.sent.flush/client",
-        "${server}/client.sent.flush/server" })
+        "${net}/client.sent.flush/client",
+        "${app}/client.sent.flush/server" })
     public void shouldReceiveClientSentFlush() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("server.json")
     @Specification({
-        "${route}/server/controller",
-        "${client}/server.sent.challenge/client",
-        "${server}/server.sent.challenge/server" })
+        "${net}/server.sent.challenge/client",
+        "${app}/server.sent.challenge/server" })
     public void shouldReceiveServerSentChallenge() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("server.json")
     @Specification({
-        "${route}/server/controller",
-        "${client}/client.sent.challenge/client",
-        "${server}/client.sent.challenge/server" })
+        "${net}/client.sent.challenge/client",
+        "${app}/client.sent.challenge/server" })
     public void shouldReceiveClientSentChallenge() throws Exception
     {
         k3po.finish();

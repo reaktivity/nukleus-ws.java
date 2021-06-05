@@ -19,7 +19,6 @@ import static java.nio.ByteOrder.BIG_ENDIAN;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_NORMAL_CLOSURE;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_PROTOCOL_ERROR;
 import static org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW.STATUS_UNEXPECTED_CONDITION;
@@ -35,28 +34,21 @@ import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import java.util.function.LongUnaryOperator;
-import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.buffer.BufferPool;
-import org.reaktivity.nukleus.function.MessageConsumer;
-import org.reaktivity.nukleus.function.MessageFunction;
-import org.reaktivity.nukleus.function.MessagePredicate;
-import org.reaktivity.nukleus.route.RouteManager;
-import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.ws.internal.WsConfiguration;
 import org.reaktivity.nukleus.ws.internal.WsNukleus;
+import org.reaktivity.nukleus.ws.internal.config.WsBinding;
+import org.reaktivity.nukleus.ws.internal.config.WsRoute;
 import org.reaktivity.nukleus.ws.internal.types.Array32FW;
 import org.reaktivity.nukleus.ws.internal.types.Flyweight;
 import org.reaktivity.nukleus.ws.internal.types.HttpHeaderFW;
 import org.reaktivity.nukleus.ws.internal.types.OctetsFW;
 import org.reaktivity.nukleus.ws.internal.types.codec.WsHeaderFW;
-import org.reaktivity.nukleus.ws.internal.types.control.RouteFW;
-import org.reaktivity.nukleus.ws.internal.types.control.WsRouteExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.ChallengeFW;
@@ -69,8 +61,12 @@ import org.reaktivity.nukleus.ws.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsBeginExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsDataExFW;
 import org.reaktivity.nukleus.ws.internal.types.stream.WsEndExFW;
+import org.reaktivity.reaktor.config.Binding;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.function.MessageConsumer;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
-public final class WsClientFactory implements StreamFactory
+public final class WsClientFactory implements WsStreamFactory
 {
     private static final int MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE = 125;
 
@@ -84,9 +80,6 @@ public final class WsClientFactory implements StreamFactory
     private static final DirectBuffer CLOSE_PAYLOAD = new UnsafeBuffer(new byte[0]);
 
     private final MessageDigest sha1 = initSHA1();
-
-    private final RouteFW routeRO = new RouteFW();
-    private final WsRouteExFW wsRouteExRO = new WsRouteExFW();
 
     private final BeginFW beginRO = new BeginFW();
     private final DataFW dataRO = new DataFW();
@@ -123,33 +116,41 @@ public final class WsClientFactory implements StreamFactory
     private final WsHeaderFW wsHeaderRO = new WsHeaderFW();
     private final WsHeaderFW.Builder wsHeaderRW = new WsHeaderFW.Builder();
 
-    private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
+    private final StreamFactory streamFactory;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
 
-    private final Long2ObjectHashMap<WsClientConnect> correlations;
-    private final MessageFunction<RouteFW> wrapRoute;
+    private final Long2ObjectHashMap<WsBinding> bindings;
     private final int wsTypeId;
     private final int httpTypeId;
 
     public WsClientFactory(
         WsConfiguration config,
-        RouteManager router,
-        MutableDirectBuffer writeBuffer,
-        BufferPool bufferPool,
-        LongUnaryOperator supplyInitialId,
-        LongUnaryOperator supplyReplyId,
-        ToIntFunction<String> supplyTypeId)
+        ElektronContext context)
     {
-        this.router = requireNonNull(router);
-        this.writeBuffer = requireNonNull(writeBuffer);
-        this.supplyInitialId = requireNonNull(supplyInitialId);
-        this.supplyReplyId = requireNonNull(supplyReplyId);
-        this.correlations = new Long2ObjectHashMap<>();
-        this.wrapRoute = this::wrapRoute;
-        this.wsTypeId = supplyTypeId.applyAsInt(WsNukleus.NAME);
-        this.httpTypeId = supplyTypeId.applyAsInt("http");
+        this.writeBuffer = context.writeBuffer();
+        this.streamFactory = context.streamFactory();
+        this.supplyInitialId = context::supplyInitialId;
+        this.supplyReplyId = context::supplyReplyId;
+        this.bindings = new Long2ObjectHashMap<>();
+        this.wsTypeId = context.supplyTypeId(WsNukleus.NAME);
+        this.httpTypeId = context.supplyTypeId("http");
+    }
+
+    @Override
+    public void attach(
+        Binding binding)
+    {
+        WsBinding wsBinding = new WsBinding(binding);
+        bindings.put(binding.id, wsBinding);
+    }
+
+    @Override
+    public void detach(
+        long bindingId)
+    {
+        bindings.remove(bindingId);
     }
 
     @Override
@@ -158,188 +159,54 @@ public final class WsClientFactory implements StreamFactory
         DirectBuffer buffer,
         int index,
         int length,
-        MessageConsumer throttle)
+        MessageConsumer sender)
     {
         final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-        final long streamId = begin.streamId();
-
-        MessageConsumer newStream = null;
-
-        if ((streamId & 0x0000_0000_0000_0001L) != 0L)
-        {
-            newStream = newInitialStream(begin, throttle);
-        }
-        else
-        {
-            newStream = newReplyStream(begin, throttle);
-        }
-
-        return newStream;
-    }
-
-    private MessageConsumer newInitialStream(
-        final BeginFW begin,
-        final MessageConsumer sender)
-    {
         final long routeId = begin.routeId();
         final long initialId = begin.streamId();
+        final long authorization = begin.authorization();
         final OctetsFW extension = begin.extension();
-        final boolean hasExtension = extension.sizeof() != 0;
-
-        String protocol = null;
-        String scheme = null;
-        String authority = null;
-        String path = null;
-        if (hasExtension)
-        {
-            final WsBeginExFW wsBeginEx = wsBeginExRO.wrap(extension.buffer(), extension.offset(), extension.limit());
-            protocol = wsBeginEx.protocol().asString();
-            scheme = wsBeginEx.scheme().asString();
-            authority = wsBeginEx.authority().asString();
-            path = wsBeginEx.path().asString();
-        }
-
-        final String protocol0 = protocol;
-        final String scheme0 = scheme;
-        final String authority0 = authority;
-        final String path0 = path;
-        final MessagePredicate filter = (t, b, o, l) ->
-        {
-            final RouteFW route = routeRO.wrap(b, o, o + l);
-            final OctetsFW routeEx = route.extension();
-
-            String routeProtocol = null;
-            String routeScheme = null;
-            String routeAuthority = null;
-            String routePath = null;
-
-            if (routeEx.sizeof() != 0)
-            {
-                final WsRouteExFW wsRouteEx = routeEx.get(wsRouteExRO::wrap);
-                routeProtocol = wsRouteEx.protocol().asString();
-                routeScheme = wsRouteEx.scheme().asString();
-                routeAuthority = wsRouteEx.authority().asString();
-                routePath = wsRouteEx.path().asString();
-            }
-
-            return (protocol0 == null || routeProtocol == null || protocol0.equals(routeProtocol)) &&
-                    (scheme0 == null || routeScheme == null || scheme0.equals(routeScheme)) &&
-                    (authority0 == null || routeAuthority == null || authority0.equals(routeAuthority)) &&
-                    (path0 == null || routePath == null || path0.startsWith(routePath));
-
-        };
-
-        final RouteFW route = router.resolve(routeId, begin.authorization(), filter, wrapRoute);
+        final WsBeginExFW wsBeginEx = extension.get(wsBeginExRO::tryWrap);
 
         MessageConsumer newStream = null;
 
-        if (route != null)
+        final WsBinding binding = bindings.get(routeId);
+        if (binding != null)
         {
-            final long wsRouteId = route.correlationId();
+            String protocol = wsBeginEx != null ? wsBeginEx.protocol().asString() : binding.options.protocol;
+            String scheme = wsBeginEx != null ? wsBeginEx.scheme().asString() : binding.options.scheme;
+            String authority = wsBeginEx != null ? wsBeginEx.authority().asString() : binding.options.authority;
+            String path = wsBeginEx != null ? wsBeginEx.path().asString() : binding.options.path;
 
-            WsRouteExFW wsRouteEx = null;
-            final OctetsFW routeEx = route.extension();
-            if (routeEx.sizeof() != 0)
+            WsRoute route = binding.resolve(authorization, protocol, scheme, authority, path);
+
+            if (route != null)
             {
-                wsRouteEx = routeEx.get(wsRouteExRO::wrap);
-            }
-
-            final String wsProtocol = wsRouteEx != null ? wsRouteEx.protocol().asString() : null;
-            final String wsScheme = hasExtension ? scheme : wsRouteEx != null ? wsRouteEx.scheme().asString() : null;
-            final String wsAuthority = hasExtension ? authority : wsRouteEx != null ? wsRouteEx.authority().asString() : null;
-            final String wsPath = hasExtension ? path : wsRouteEx != null ? wsRouteEx.path().asString() : null;
-
-            final WsClientAccept accept = new WsClientAccept(routeId, initialId, sender, protocol);
-            final WsClientConnect connect = new WsClientConnect(wsRouteId, wsScheme, wsAuthority, wsPath, wsProtocol);
-
-            accept.correlate(connect);
-            connect.correlate(accept);
-
-            correlations.put(connect.replyId, connect);
-
-            newStream = accept::handleStream;
-        }
-
-        return newStream;
-    }
-
-    private MessageConsumer newReplyStream(
-        final BeginFW begin,
-        final MessageConsumer sender)
-    {
-        final long replyId = begin.streamId();
-        final WsClientConnect connect = correlations.remove(replyId);
-
-        MessageConsumer newStream = null;
-
-        if (connect != null)
-        {
-            final OctetsFW extension = begin.extension();
-            if (extension.sizeof() != 0)
-            {
-                // TODO: need lightweight approach (start)
-                final HttpBeginExFW httpBeginEx = extension.get(httpBeginExRO::wrap);
-                final Map<String, String> headers = new LinkedHashMap<>();
-                httpBeginEx.headers().forEach(header ->
-                {
-                    final String name = header.name().asString();
-                    final String value = header.value().asString();
-                    headers.merge(name, value, (v1, v2) -> String.format("%s, %s", v1, v2));
-                });
-
-                final String status = headers.get(":status");
-                final String upgrade = headers.get("upgrade");
-                final String hash = headers.get("sec-websocket-accept");
-                final String protocol = headers.get("sec-websocket-protocol");
-                // TODO: need lightweight approach (end)
-
-                if (WEBSOCKET_STATUS.equals(status) &&
-                    WEBSOCKET_UPGRADE.equals(upgrade) &&
-                    Objects.equals(connect.protocol, protocol))
-                {
-                    sha1.reset();
-                    sha1.update(connect.key.getBytes(US_ASCII));
-                    final byte[] digest = sha1.digest(HANDSHAKE_GUID);
-                    final Encoder encoder = Base64.getEncoder();
-                    final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
-
-                    if (handshakeHash.equals(hash))
-                    {
-                        newStream = connect::handleStream;
-                    }
-                }
-            }
-
-            if (newStream == null)
-            {
-                final long traceId = begin.traceId();
-                final long authorization = begin.authorization();
-
-                connect.accept.doReset(traceId, authorization);
+                newStream = new WsStream(
+                    sender,
+                    routeId,
+                    initialId,
+                    route.id,
+                    scheme,
+                    authority,
+                    path,
+                    protocol)::onAppMessage;
             }
         }
 
         return newStream;
     }
 
-    private RouteFW wrapRoute(
-        int msgTypeId,
-        DirectBuffer buffer,
-        int index,
-        int length)
+    private final class WsStream
     {
-        return routeRO.wrap(buffer, index, index + length);
-    }
-
-    private final class WsClientAccept
-    {
-        private final MessageConsumer receiver;
+        private final MessageConsumer application;
         private final long routeId;
         private final long initialId;
         private final long replyId;
-        private final String protocol;
+        private final WsClient client;
 
-        private WsClientConnect connect;
+        private String protocol;
+        private int state;
 
         private long initialSeq;
         private long initialAck;
@@ -350,31 +217,31 @@ public final class WsClientFactory implements StreamFactory
         private int replyMax;
         private int replyPad;
 
-        private WsClientAccept(
+        private WsStream(
+            MessageConsumer application,
             long routeId,
             long initialId,
-            MessageConsumer receiver,
+            long resolvedId,
+            String scheme,
+            String authority,
+            String path,
             String protocol)
         {
+            this.application = application;
             this.routeId = routeId;
             this.initialId = initialId;
-            this.receiver = receiver;
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.protocol = protocol;
+            this.client = new WsClient(resolvedId, scheme, authority, path, protocol);
         }
 
-        private void correlate(
-            WsClientConnect connect)
-        {
-            this.connect = connect;
-        }
-
-        private void doBegin(
+        private void doAppBegin(
             int maximum,
             long traceId,
             long authorization,
             long affinity)
         {
+            state = WsState.openingReply(state);
+
             final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                     .routeId(routeId)
                     .streamId(replyId)
@@ -387,11 +254,10 @@ public final class WsClientFactory implements StreamFactory
                     .extension(e -> e.set(visitWsBeginEx(protocol)))
                     .build();
 
-            router.setThrottle(replyId, this::handleThrottle);
-            receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
+            application.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
         }
 
-        private void doData(
+        private void doAppData(
             long traceId,
             int flags,
             int maskingKey,
@@ -413,51 +279,61 @@ public final class WsClientFactory implements StreamFactory
                     .extension(e -> e.set(visitWsDataEx(flags)))
                     .build();
 
-            receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
+            application.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
 
             replySeq += reserved;
             assert replySeq <= replyAck + replyMax;
         }
 
-        private void doEnd(
+        private void doAppEnd(
             long traceId,
             long authorization,
             short code)
         {
-            final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(replyId)
-                    .sequence(replySeq)
-                    .acknowledge(replyAck)
-                    .maximum(replyMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .extension(e -> e.set(visitWsEndEx(code)))
-                    .build();
+            if (!WsState.replyClosed(state))
+            {
+                state = WsState.closeReply(state);
 
-            receiver.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
+                final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(replyId)
+                        .sequence(replySeq)
+                        .acknowledge(replyAck)
+                        .maximum(replyMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .extension(e -> e.set(visitWsEndEx(code)))
+                        .build();
+
+                application.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
+            }
         }
 
-        private void doAbort(
+        private void doAppAbort(
             long traceId,
             long authorization,
             short code)
         {
-            // TODO: WsAbortEx
-            final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(replyId)
-                    .sequence(replySeq)
-                    .acknowledge(replyAck)
-                    .maximum(replyMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .build();
+            if (!WsState.replyClosed(state))
+            {
+                state = WsState.closeReply(state);
 
-            receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
+                // TODO: WsAbortEx
+                final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(replyId)
+                        .sequence(replySeq)
+                        .acknowledge(replyAck)
+                        .maximum(replyMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .build();
+
+                application.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
+            }
         }
 
-        private void doFlush(
+        private void doAppFlush(
             long traceId,
             long authorization,
             long budgetId,
@@ -475,27 +351,32 @@ public final class WsClientFactory implements StreamFactory
                     .reserved(reserved)
                     .build();
 
-            receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
+            application.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
         }
 
-        private void doReset(
+        private void doAppReset(
             long traceId,
             long authorization)
         {
-            final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(initialId)
-                    .sequence(initialSeq)
-                    .acknowledge(initialAck)
-                    .maximum(initialMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .build();
+            if (!WsState.initialClosed(state))
+            {
+                state = WsState.closeInitial(state);
 
-            receiver.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
+                final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(initialId)
+                        .sequence(initialSeq)
+                        .acknowledge(initialAck)
+                        .maximum(initialMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .build();
+
+                application.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
+            }
         }
 
-        private void doChallenge(
+        private void doAppChallenge(
             long traceId,
             long authorization,
             OctetsFW extension)
@@ -511,10 +392,10 @@ public final class WsClientFactory implements StreamFactory
                     .extension(extension)
                     .build();
 
-            receiver.accept(challenge.typeId(), challenge.buffer(), challenge.offset(), challenge.sizeof());
+            application.accept(challenge.typeId(), challenge.buffer(), challenge.offset(), challenge.sizeof());
         }
 
-        private void doWindow(
+        private void doAppWindow(
             long traceId,
             long authorization,
             long budgetId,
@@ -522,11 +403,13 @@ public final class WsClientFactory implements StreamFactory
             int paddingMin)
         {
             long initialAckMax = Math.max(initialSeq - pendingAck, initialAck);
-            if (initialAckMax > initialAck || connect.initialMax > initialMax)
+            if (initialAckMax > initialAck || client.initialMax > initialMax)
             {
                 initialAck = initialAckMax;
-                initialMax = connect.initialMax;
+                initialMax = client.initialMax;
                 assert initialAck <= initialSeq;
+
+                state = WsState.openReply(state);
 
                 int initialPad = paddingMin + MAXIMUM_HEADER_SIZE;
 
@@ -542,11 +425,11 @@ public final class WsClientFactory implements StreamFactory
                         .padding(initialPad)
                         .build();
 
-                receiver.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
+                application.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
             }
         }
 
-        private void handleStream(
+        private void onAppMessage(
             int msgTypeId,
             DirectBuffer buffer,
             int index,
@@ -556,56 +439,40 @@ public final class WsClientFactory implements StreamFactory
             {
             case BeginFW.TYPE_ID:
                 final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-                onBegin(begin);
+                onAppBegin(begin);
                 break;
             case DataFW.TYPE_ID:
                 final DataFW data = dataRO.wrap(buffer, index, index + length);
-                onData(data);
+                onAppData(data);
                 break;
             case EndFW.TYPE_ID:
                 final EndFW end = endRO.wrap(buffer, index, index + length);
-                onEnd(end);
+                onAppEnd(end);
                 break;
             case AbortFW.TYPE_ID:
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
-                onAbort(abort);
+                onAppAbort(abort);
                 break;
             case FlushFW.TYPE_ID:
                 final FlushFW flush = flushRO.wrap(buffer, index, index + length);
-                onFlush(flush);
+                onAppFlush(flush);
                 break;
-            default:
-                break;
-            }
-        }
-
-        private void handleThrottle(
-            int msgTypeId,
-            DirectBuffer buffer,
-            int index,
-            int length)
-        {
-            switch (msgTypeId)
-            {
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                onWindow(window);
+                onAppWindow(window);
                 break;
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                onReset(reset);
+                onAppReset(reset);
                 break;
             case ChallengeFW.TYPE_ID:
                 final ChallengeFW challenge = challengeRO.wrap(buffer, index, index + length);
-                onChallenge(challenge);
-                break;
-            default:
-                // ignore
+                onAppChallenge(challenge);
                 break;
             }
         }
 
-        private void onBegin(
+        private void onAppBegin(
             BeginFW begin)
         {
             final long sequence = begin.sequence();
@@ -614,6 +481,8 @@ public final class WsClientFactory implements StreamFactory
             final long traceId = begin.traceId();
             final long authorization = begin.authorization();
             final long affinity = begin.affinity();
+            final OctetsFW extension = begin.extension();
+            final WsBeginExFW beginEx = extension.get(wsBeginExRO::tryWrap);
 
             assert acknowledge == sequence;
             assert sequence >= initialSeq;
@@ -621,11 +490,13 @@ public final class WsClientFactory implements StreamFactory
 
             initialSeq = sequence;
             initialAck = acknowledge;
+            state = WsState.openingInitial(state);
+            protocol = beginEx != null ? beginEx.protocol().asString() : null;
 
-            connect.doBegin(traceId, authorization, affinity);
+            client.doNetBegin(traceId, authorization, affinity);
         }
 
-        private void onData(
+        private void onAppData(
             DataFW data)
         {
             final long sequence = data.sequence();
@@ -644,7 +515,7 @@ public final class WsClientFactory implements StreamFactory
 
             if (initialSeq > initialAck + initialMax)
             {
-                doReset(traceId, authorization);
+                doAppReset(traceId, authorization);
             }
             else
             {
@@ -658,11 +529,11 @@ public final class WsClientFactory implements StreamFactory
                     flags = wsDataEx.flags();
                 }
 
-                connect.doData(traceId, authorization, budgetId, reserved, payload, flags);
+                client.doNetData(traceId, authorization, budgetId, reserved, payload, flags);
             }
         }
 
-        private void onEnd(
+        private void onAppEnd(
             EndFW end)
         {
             final long sequence = end.sequence();
@@ -674,17 +545,18 @@ public final class WsClientFactory implements StreamFactory
             assert sequence >= initialSeq;
 
             initialSeq = sequence;
+            state = WsState.closeInitial(state);
 
             assert initialAck <= initialSeq;
 
             final OctetsFW payload = payloadRO.wrap(CLOSE_PAYLOAD, 0, 0);
-            final int reserved = payload.sizeof() + MAXIMUM_HEADER_SIZE + connect.initialPad;
+            final int reserved = payload.sizeof() + MAXIMUM_HEADER_SIZE + client.initialPad;
 
-            connect.doData(traceId, authorization, connect.initialBudgetId, reserved, payload, 0x88);
-            connect.doEnd(traceId, authorization);
+            client.doNetData(traceId, authorization, client.initialBudgetId, reserved, payload, 0x88);
+            client.doNetEnd(traceId, authorization);
         }
 
-        private void onAbort(
+        private void onAppAbort(
             AbortFW abort)
         {
             final long sequence = abort.sequence();
@@ -696,13 +568,14 @@ public final class WsClientFactory implements StreamFactory
             assert sequence >= initialSeq;
 
             initialSeq = sequence;
+            state = WsState.closeInitial(state);
 
             assert initialAck <= initialSeq;
 
-            connect.doAbort(traceId, authorization);
+            client.doNetAbort(traceId, authorization);
         }
 
-        private void onFlush(
+        private void onAppFlush(
             FlushFW flush)
         {
             final long sequence = flush.sequence();
@@ -719,10 +592,10 @@ public final class WsClientFactory implements StreamFactory
 
             assert initialAck <= initialSeq;
 
-            connect.doFlush(traceId, authorization, budgetId, reserved);
+            client.doNetFlush(traceId, authorization, budgetId, reserved);
         }
 
-        private void onWindow(
+        private void onAppWindow(
             WindowFW window)
         {
             final long sequence = window.sequence();
@@ -740,13 +613,14 @@ public final class WsClientFactory implements StreamFactory
             replyAck = acknowledge;
             replyMax = maximum;
             replyPad = padding;
+            state = WsState.openReply(state);
 
             assert replyAck <= replySeq;
 
-            connect.doWindow(traceId, authorization, budgetId, (int)(replySeq - replyAck), replyPad);
+            client.doNetWindow(traceId, authorization, budgetId, (int)(replySeq - replyAck), replyPad);
         }
 
-        private void onReset(
+        private void onAppReset(
             ResetFW reset)
         {
             final long sequence = reset.sequence();
@@ -758,13 +632,14 @@ public final class WsClientFactory implements StreamFactory
             assert acknowledge >= replyAck;
 
             replyAck = acknowledge;
+            state = WsState.closeReply(state);
 
             assert replyAck <= replySeq;
 
-            connect.doReset(traceId, authorization);
+            client.doNetReset(traceId, authorization);
         }
 
-        private void onChallenge(
+        private void onAppChallenge(
             ChallengeFW challenge)
         {
             final long sequence = challenge.sequence();
@@ -780,232 +655,175 @@ public final class WsClientFactory implements StreamFactory
 
             assert replyAck <= replySeq;
 
-            connect.doChallenge(traceId, authorization, extension);
-        }
-    }
-
-    private final class WsClientConnect
-    {
-        private final long routeId;
-        private final long initialId;
-        private final long replyId;
-        private final MessageConsumer receiver;
-        private final String scheme;
-        private final String authority;
-        private final String path;
-        private final String key;
-        private final String protocol;
-
-        private long initialBudgetId;
-        private long initialSeq;
-        private long initialAck;
-        private int initialPad;
-        private int initialMax;
-        private long replySeq;
-        private long replyAck;
-        private int replyMax;
-
-        private WsClientAccept accept;
-
-        private long decodeTraceId;
-        private long decodeAuthorization;
-        private DecoderState decodeState;
-
-        private MutableDirectBuffer header;
-        private int headerLength;
-
-        private int payloadProgress;
-        private int payloadLength;
-        private int maskingKey;
-
-        private int statusLength;
-        private MutableDirectBuffer status;
-
-        private WsClientConnect(
-            long routeId,
-            String scheme,
-            String authority,
-            String path,
-            String protocol)
-        {
-            this.routeId = routeId;
-            this.scheme = scheme;
-            this.authority = authority;
-            this.path = path;
-            this.key = newSecWebsocketKey();
-            this.protocol = protocol;
-            this.initialId = supplyInitialId.applyAsLong(routeId);
-            this.replyId =  supplyReplyId.applyAsLong(initialId);
-            this.receiver = router.supplyReceiver(initialId);
-            this.header = new UnsafeBuffer(new byte[MAXIMUM_HEADER_SIZE]);
-            this.decodeState = this::decodeHeader;
+            client.doNetChallenge(traceId, authorization, extension);
         }
 
-        private void correlate(
-            WsClientAccept accept)
+        private final class WsClient
         {
-            this.accept = accept;
-        }
+            private MessageConsumer network;
+            private final long routeId;
+            private final long initialId;
+            private final long replyId;
+            private final String scheme;
+            private final String authority;
+            private final String path;
+            private final String key;
+            private final String protocol;
 
-        private void doBegin(
-            long traceId,
-            long authorization,
-            long affinity)
-        {
-            router.setThrottle(initialId, this::handleThrottle);
-            doHttpBegin(receiver, routeId, initialId, initialSeq, initialAck, initialMax, traceId, authorization, affinity,
-                    setHttpHeaders(scheme, authority, path, key, protocol));
-        }
+            private long initialBudgetId;
+            private long initialSeq;
+            private long initialAck;
+            private int initialPad;
+            private int initialMax;
+            private long replySeq;
+            private long replyAck;
+            private int replyMax;
 
-        private void doData(
-            long traceId,
-            long authorization,
-            long budgetId,
-            int reserved,
-            OctetsFW payload,
-            int flags)
-        {
-            final int payloadSize = payload.sizeof();
-            final int maskingKey = ThreadLocalRandom.current().nextInt();
+            private long decodeTraceId;
+            private long decodeAuthorization;
+            private DecoderState decodeState;
 
-            WsHeaderFW wsHeader = wsHeaderRW.wrap(writeBuffer, DataFW.FIELD_OFFSET_PAYLOAD, writeBuffer.capacity())
-                                            .length(payloadSize)
-                                            .flagsAndOpcode(flags)
-                                            .maskingKey(maskingKey)
-                                            .build();
+            private MutableDirectBuffer header;
+            private int headerLength;
 
-            final int wsHeaderSize = wsHeader.sizeof();
+            private int payloadProgress;
+            private int payloadLength;
+            private int maskingKey;
 
-            assert reserved >= wsHeaderSize + payloadSize + initialPad;
+            private int statusLength;
+            private MutableDirectBuffer status;
 
-            DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(initialId)
-                    .sequence(initialSeq)
-                    .acknowledge(initialAck)
-                    .maximum(initialMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .budgetId(budgetId)
-                    .reserved(reserved)
-                    .payload(p -> p.set((b, o, m) -> wsHeaderSize)
-                                   .put(payload.buffer(), payload.offset(), payloadSize)
-                                   .set((b, o, l) -> wsHeaderSize +
-                                           xor(b, o + wsHeaderSize, o + wsHeaderSize + payloadSize, maskingKey)))
-                    .build();
-
-            receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
-
-            initialSeq += reserved;
-            assert initialSeq <= initialAck + initialMax;
-        }
-
-        private void doEnd(
-            long traceId,
-            long authorization)
-        {
-            final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(initialId)
-                    .sequence(initialSeq)
-                    .acknowledge(initialAck)
-                    .maximum(initialMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .build();
-
-            receiver.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
-        }
-
-        private void doAbort(
-            long traceId,
-            long authorization)
-        {
-            final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(initialId)
-                    .sequence(initialSeq)
-                    .acknowledge(initialAck)
-                    .maximum(initialMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .build();
-
-            receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
-        }
-
-        private void doFlush(
-            long traceId,
-            long authorization,
-            long budgetId,
-            int reserved)
-        {
-            final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(initialId)
-                    .sequence(initialSeq)
-                    .acknowledge(initialAck)
-                    .maximum(initialMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .budgetId(budgetId)
-                    .reserved(reserved)
-                    .build();
-
-            receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
-        }
-
-        private void doReset(
-            long traceId,
-            long authorization)
-        {
-            final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(replyId)
-                    .sequence(replySeq)
-                    .acknowledge(replyAck)
-                    .maximum(replyMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .build();
-
-            receiver.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
-        }
-
-        private void doChallenge(
-            long traceId,
-            long authorization,
-            OctetsFW extension)
-        {
-            final ChallengeFW challenge = challengeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                    .routeId(routeId)
-                    .streamId(replyId)
-                    .sequence(replySeq)
-                    .acknowledge(replyAck)
-                    .maximum(replyMax)
-                    .traceId(traceId)
-                    .authorization(authorization)
-                    .extension(extension)
-                    .build();
-
-            receiver.accept(challenge.typeId(), challenge.buffer(), challenge.offset(), challenge.sizeof());
-        }
-
-        private void doWindow(
-            long traceId,
-            long authorization,
-            long budgetId,
-            int pendingAck,
-            int paddingMin)
-        {
-            long replyAckMax = Math.max(replySeq - pendingAck, replyAck);
-            if (replyAckMax > replyAck || accept.replyMax > replyMax)
+            private WsClient(
+                long routeId,
+                String scheme,
+                String authority,
+                String path,
+                String protocol)
             {
-                replyAck = replyAckMax;
-                replyMax = accept.replyMax;
-                assert replyAck <= replySeq;
+                this.routeId = routeId;
+                this.scheme = scheme;
+                this.authority = authority;
+                this.path = path;
+                this.key = newSecWebsocketKey();
+                this.protocol = protocol;
+                this.initialId = supplyInitialId.applyAsLong(routeId);
+                this.replyId =  supplyReplyId.applyAsLong(initialId);
+                this.header = new UnsafeBuffer(new byte[MAXIMUM_HEADER_SIZE]);
+                this.decodeState = this::decodeHeader;
+            }
 
-                final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+            private void doNetBegin(
+                long traceId,
+                long authorization,
+                long affinity)
+            {
+                network = doHttpBegin(this::onNetMessage, routeId, initialId, initialSeq, initialAck, initialMax,
+                        traceId, authorization, affinity, setHttpHeaders(scheme, authority, path, key, protocol));
+            }
+
+            private void doNetData(
+                long traceId,
+                long authorization,
+                long budgetId,
+                int reserved,
+                OctetsFW payload,
+                int flags)
+            {
+                final int payloadSize = payload.sizeof();
+                final int maskingKey = ThreadLocalRandom.current().nextInt();
+
+                WsHeaderFW wsHeader = wsHeaderRW.wrap(writeBuffer, DataFW.FIELD_OFFSET_PAYLOAD, writeBuffer.capacity())
+                                                .length(payloadSize)
+                                                .flagsAndOpcode(flags)
+                                                .maskingKey(maskingKey)
+                                                .build();
+
+                final int wsHeaderSize = wsHeader.sizeof();
+
+                assert reserved >= wsHeaderSize + payloadSize + initialPad;
+
+                DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(initialId)
+                        .sequence(initialSeq)
+                        .acknowledge(initialAck)
+                        .maximum(initialMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .budgetId(budgetId)
+                        .reserved(reserved)
+                        .payload(p -> p.set((b, o, m) -> wsHeaderSize)
+                                       .put(payload.buffer(), payload.offset(), payloadSize)
+                                       .set((b, o, l) -> wsHeaderSize +
+                                               xor(b, o + wsHeaderSize, o + wsHeaderSize + payloadSize, maskingKey)))
+                        .build();
+
+                network.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
+
+                initialSeq += reserved;
+                assert initialSeq <= initialAck + initialMax;
+            }
+
+            private void doNetEnd(
+                long traceId,
+                long authorization)
+            {
+                final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(initialId)
+                        .sequence(initialSeq)
+                        .acknowledge(initialAck)
+                        .maximum(initialMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .build();
+
+                network.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
+            }
+
+            private void doNetAbort(
+                long traceId,
+                long authorization)
+            {
+                final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(initialId)
+                        .sequence(initialSeq)
+                        .acknowledge(initialAck)
+                        .maximum(initialMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .build();
+
+                network.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
+            }
+
+            private void doNetFlush(
+                long traceId,
+                long authorization,
+                long budgetId,
+                int reserved)
+            {
+                final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(initialId)
+                        .sequence(initialSeq)
+                        .acknowledge(initialAck)
+                        .maximum(initialMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .budgetId(budgetId)
+                        .reserved(reserved)
+                        .build();
+
+                network.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
+            }
+
+            private void doNetReset(
+                long traceId,
+                long authorization)
+            {
+                final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                         .routeId(routeId)
                         .streamId(replyId)
                         .sequence(replySeq)
@@ -1013,148 +831,216 @@ public final class WsClientFactory implements StreamFactory
                         .maximum(replyMax)
                         .traceId(traceId)
                         .authorization(authorization)
-                        .budgetId(budgetId)
-                        .padding(paddingMin)
                         .build();
 
-                receiver.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
+                network.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
             }
-        }
 
-        private void handleStream(
-            int msgTypeId,
-            DirectBuffer buffer,
-            int index,
-            int length)
-        {
-            switch (msgTypeId)
+            private void doNetChallenge(
+                long traceId,
+                long authorization,
+                OctetsFW extension)
             {
-            case BeginFW.TYPE_ID:
-                final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-                onBegin(begin);
-                break;
-            case DataFW.TYPE_ID:
-                final DataFW data = dataRO.wrap(buffer, index, index + length);
-                onData(data);
-                break;
-            case EndFW.TYPE_ID:
-                final EndFW end = endRO.wrap(buffer, index, index + length);
-                onEnd(end);
-                break;
-            case AbortFW.TYPE_ID:
-                final AbortFW abort = abortRO.wrap(buffer, index, index + length);
-                onAbort(abort);
-                break;
-            case FlushFW.TYPE_ID:
-                final FlushFW flush = flushRO.wrap(buffer, index, index + length);
-                onFlush(flush);
-                break;
-            default:
-                break;
+                final ChallengeFW challenge = challengeRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                        .routeId(routeId)
+                        .streamId(replyId)
+                        .sequence(replySeq)
+                        .acknowledge(replyAck)
+                        .maximum(replyMax)
+                        .traceId(traceId)
+                        .authorization(authorization)
+                        .extension(extension)
+                        .build();
+
+                network.accept(challenge.typeId(), challenge.buffer(), challenge.offset(), challenge.sizeof());
             }
-        }
 
-        private void handleThrottle(
-            int msgTypeId,
-            DirectBuffer buffer,
-            int index,
-            int length)
-        {
-            switch (msgTypeId)
+            private void doNetWindow(
+                long traceId,
+                long authorization,
+                long budgetId,
+                int pendingAck,
+                int paddingMin)
             {
-            case WindowFW.TYPE_ID:
-                final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                onWindow(window);
-                break;
-            case ResetFW.TYPE_ID:
-                final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                onReset(reset);
-                break;
-            case ChallengeFW.TYPE_ID:
-                final ChallengeFW challenge = challengeRO.wrap(buffer, index, index + length);
-                onChallenge(challenge);
-                break;
-            default:
-                // ignore
-                break;
-            }
-        }
-
-        private void onBegin(
-            BeginFW begin)
-        {
-            final long sequence = begin.sequence();
-            final long acknowledge = begin.acknowledge();
-            final int maximum = begin.maximum();
-            final long traceId = begin.traceId();
-            final long authorization = begin.authorization();
-            final long affinity = begin.affinity();
-
-            assert acknowledge <= sequence;
-            assert sequence >= replySeq;
-            assert acknowledge <= replyAck;
-
-            replySeq = sequence;
-            replyAck = acknowledge;
-
-            assert replyAck == replySeq;
-            assert maximum == 0;
-
-            accept.doBegin(maximum, traceId, authorization, affinity);
-        }
-
-
-        private void onData(
-            DataFW data)
-        {
-            final long sequence = data.sequence();
-            final long acknowledge = data.acknowledge();
-            final long authorization = data.authorization();
-            final long traceId = data.traceId();
-
-            assert acknowledge <= sequence;
-            assert sequence >= replySeq;
-            assert acknowledge <= replyAck;
-
-            replySeq = sequence + data.reserved();
-
-            assert replyAck <= replySeq;
-
-            if (replySeq > replyAck + replyMax)
-            {
-                doReset(traceId, authorization);
-            }
-            else
-            {
-                decodeTraceId = traceId;
-                decodeAuthorization = authorization;
-
-                final OctetsFW payload = data.payload();
-                final DirectBuffer buffer = payload.buffer();
-
-                int offset = payload.offset();
-                int length = payload.sizeof();
-                while (length > 0)
+                long replyAckMax = Math.max(replySeq - pendingAck, replyAck);
+                if (replyAckMax > replyAck || WsStream.this.replyMax > replyMax)
                 {
-                    int consumed = decodeState.decode(buffer, offset, length);
-                    offset += consumed;
-                    length -= consumed;
-                }
+                    replyAck = replyAckMax;
+                    replyMax = WsStream.this.replyMax;
+                    assert replyAck <= replySeq;
 
-                // Since we have two decoding states for a frame, the following is
-                // needed to handle empty close, empty ping etc. Otherwise, it will be
-                // delayed until next handleData() (which may not come for e.g empty close frame)
-                if (payloadLength == 0)
-                {
-                    decodeState.decode(buffer, 0, 0);
+                    final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                            .routeId(routeId)
+                            .streamId(replyId)
+                            .sequence(replySeq)
+                            .acknowledge(replyAck)
+                            .maximum(replyMax)
+                            .traceId(traceId)
+                            .authorization(authorization)
+                            .budgetId(budgetId)
+                            .padding(paddingMin)
+                            .build();
+
+                    network.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
                 }
             }
-        }
 
-        private void onEnd(
-            EndFW end)
-        {
-            if (accept != null)
+            private void onNetMessage(
+                int msgTypeId,
+                DirectBuffer buffer,
+                int index,
+                int length)
+            {
+                switch (msgTypeId)
+                {
+                case BeginFW.TYPE_ID:
+                    final BeginFW begin = beginRO.wrap(buffer, index, index + length);
+                    onNetBegin(begin);
+                    break;
+                case DataFW.TYPE_ID:
+                    final DataFW data = dataRO.wrap(buffer, index, index + length);
+                    onNetData(data);
+                    break;
+                case EndFW.TYPE_ID:
+                    final EndFW end = endRO.wrap(buffer, index, index + length);
+                    onNetEnd(end);
+                    break;
+                case AbortFW.TYPE_ID:
+                    final AbortFW abort = abortRO.wrap(buffer, index, index + length);
+                    onNetAbort(abort);
+                    break;
+                case FlushFW.TYPE_ID:
+                    final FlushFW flush = flushRO.wrap(buffer, index, index + length);
+                    onNetFlush(flush);
+                    break;
+                case WindowFW.TYPE_ID:
+                    final WindowFW window = windowRO.wrap(buffer, index, index + length);
+                    onNetWindow(window);
+                    break;
+                case ResetFW.TYPE_ID:
+                    final ResetFW reset = resetRO.wrap(buffer, index, index + length);
+                    onNetReset(reset);
+                    break;
+                case ChallengeFW.TYPE_ID:
+                    final ChallengeFW challenge = challengeRO.wrap(buffer, index, index + length);
+                    onNetChallenge(challenge);
+                    break;
+                }
+            }
+
+            private void onNetBegin(
+                BeginFW begin)
+            {
+                final long sequence = begin.sequence();
+                final long acknowledge = begin.acknowledge();
+                final int maximum = begin.maximum();
+                final long traceId = begin.traceId();
+                final long authorization = begin.authorization();
+                final long affinity = begin.affinity();
+
+                assert acknowledge <= sequence;
+                assert sequence >= replySeq;
+                assert acknowledge <= replyAck;
+
+                replySeq = sequence;
+                replyAck = acknowledge;
+
+                assert replyAck == replySeq;
+                assert maximum == 0;
+
+                boolean handshakeHashOK = false;
+                final OctetsFW extension = begin.extension();
+                if (extension.sizeof() != 0)
+                {
+                    // TODO: need lightweight approach (start)
+                    final HttpBeginExFW httpBeginEx = extension.get(httpBeginExRO::wrap);
+                    final Map<String, String> headers = new LinkedHashMap<>();
+                    httpBeginEx.headers().forEach(header ->
+                    {
+                        final String name = header.name().asString();
+                        final String value = header.value().asString();
+                        headers.merge(name, value, (v1, v2) -> String.format("%s, %s", v1, v2));
+                    });
+
+                    final String status = headers.get(":status");
+                    final String upgrade = headers.get("upgrade");
+                    final String hash = headers.get("sec-websocket-accept");
+                    final String protocol = headers.get("sec-websocket-protocol");
+                    // TODO: need lightweight approach (end)
+
+                    if (WEBSOCKET_STATUS.equals(status) &&
+                        WEBSOCKET_UPGRADE.equals(upgrade) &&
+                        Objects.equals(this.protocol, protocol))
+                    {
+                        sha1.reset();
+                        sha1.update(key.getBytes(US_ASCII));
+                        final byte[] digest = sha1.digest(HANDSHAKE_GUID);
+                        final Encoder encoder = Base64.getEncoder();
+                        final String handshakeHash = new String(encoder.encode(digest), US_ASCII);
+
+                        handshakeHashOK = handshakeHash.equals(hash);
+                    }
+                }
+
+                if (handshakeHashOK)
+                {
+                    doAppBegin(maximum, traceId, authorization, affinity);
+                }
+                else
+                {
+                    doAppReset(traceId, authorization);
+                }
+            }
+
+            private void onNetData(
+                DataFW data)
+            {
+                final long sequence = data.sequence();
+                final long acknowledge = data.acknowledge();
+                final long authorization = data.authorization();
+                final long traceId = data.traceId();
+
+                assert acknowledge <= sequence;
+                assert sequence >= replySeq;
+                assert acknowledge <= replyAck;
+
+                replySeq = sequence + data.reserved();
+
+                assert replyAck <= replySeq;
+
+                if (replySeq > replyAck + replyMax)
+                {
+                    doNetReset(traceId, authorization);
+                }
+                else
+                {
+                    decodeTraceId = traceId;
+                    decodeAuthorization = authorization;
+
+                    final OctetsFW payload = data.payload();
+                    final DirectBuffer buffer = payload.buffer();
+
+                    int offset = payload.offset();
+                    int length = payload.sizeof();
+                    while (length > 0)
+                    {
+                        int consumed = decodeState.decode(buffer, offset, length);
+                        offset += consumed;
+                        length -= consumed;
+                    }
+
+                    // Since we have two decoding states for a frame, the following is
+                    // needed to handle empty close, empty ping etc. Otherwise, it will be
+                    // delayed until next handleData() (which may not come for e.g empty close frame)
+                    if (payloadLength == 0)
+                    {
+                        decodeState.decode(buffer, 0, 0);
+                    }
+                }
+            }
+
+            private void onNetEnd(
+                EndFW end)
             {
                 final long sequence = end.sequence();
                 final long acknowledge = end.acknowledge();
@@ -1169,14 +1055,11 @@ public final class WsClientFactory implements StreamFactory
 
                 assert replyAck <= replySeq;
 
-                accept.doEnd(traceId, authorization, STATUS_PROTOCOL_ERROR);
+                doAppEnd(traceId, authorization, STATUS_PROTOCOL_ERROR);
             }
-        }
 
-        private void onAbort(
-            AbortFW abort)
-        {
-            if (accept != null)
+            private void onNetAbort(
+                AbortFW abort)
             {
                 final long sequence = abort.sequence();
                 final long acknowledge = abort.acknowledge();
@@ -1191,14 +1074,11 @@ public final class WsClientFactory implements StreamFactory
 
                 assert replyAck <= replySeq;
 
-                accept.doAbort(traceId, authorization, STATUS_UNEXPECTED_CONDITION);
+                doAppAbort(traceId, authorization, STATUS_UNEXPECTED_CONDITION);
             }
-        }
 
-        private void onFlush(
-            FlushFW flush)
-        {
-            if (accept != null)
+            private void onNetFlush(
+                FlushFW flush)
             {
                 final long sequence = flush.sequence();
                 final long acknowledge = flush.acknowledge();
@@ -1215,296 +1095,156 @@ public final class WsClientFactory implements StreamFactory
 
                 assert replyAck <= replySeq;
 
-                accept.doFlush(traceId, authorization, budgetId, reserved);
+                doAppFlush(traceId, authorization, budgetId, reserved);
             }
-        }
 
-        private void onWindow(
-            WindowFW window)
-        {
-            final long sequence = window.sequence();
-            final long acknowledge = window.acknowledge();
-            final long traceId = window.traceId();
-            final long authorization = window.authorization();
-            final long budgetId = window.budgetId();
-            final int maximum = window.maximum();
-            final int padding = window.padding();
-
-            assert acknowledge <= sequence;
-            assert sequence <= initialSeq;
-            assert acknowledge >= initialAck;
-            assert maximum >= initialMax;
-
-            initialBudgetId = budgetId;
-            initialAck = acknowledge;
-            initialMax = maximum;
-            initialPad = padding;
-
-            assert initialAck <= initialSeq;
-
-            accept.doWindow(traceId, authorization, budgetId, (int)(initialSeq - initialAck), initialPad);
-        }
-
-        private void onReset(
-            ResetFW reset)
-        {
-            final long traceId = reset.traceId();
-            final long authorization = reset.authorization();
-
-            accept.doReset(traceId, authorization);
-
-            correlations.remove(replyId);
-        }
-
-        private void onChallenge(
-            ChallengeFW challenge)
-        {
-            final long traceId = challenge.traceId();
-            final long authorization = challenge.authorization();
-            final OctetsFW extension = challenge.extension();
-
-            accept.doChallenge(traceId, authorization, extension);
-        }
-
-        // @return no bytes consumed to assemble websocket header
-        private int assembleHeader(
-            DirectBuffer buffer,
-            int offset,
-            int length)
-        {
-            int remaining = Math.min(length, MAXIMUM_HEADER_SIZE - headerLength);
-            // may copy more than actual header length (up to max header length), but will adjust at the end
-            header.putBytes(headerLength, buffer, offset, remaining);
-
-            int consumed = remaining;
-            if (headerLength + remaining >= 2)
+            private void onNetWindow(
+                WindowFW window)
             {
-                int wsHeaderLength = wsHeaderLength(header);
-                // eventual headLength must not be more than wsHeaderLength
-                if (headerLength + remaining > wsHeaderLength)
+                final long sequence = window.sequence();
+                final long acknowledge = window.acknowledge();
+                final long traceId = window.traceId();
+                final long authorization = window.authorization();
+                final long budgetId = window.budgetId();
+                final int maximum = window.maximum();
+                final int padding = window.padding();
+
+                assert acknowledge <= sequence;
+                assert sequence <= initialSeq;
+                assert acknowledge >= initialAck;
+                assert maximum >= initialMax;
+
+                initialBudgetId = budgetId;
+                initialAck = acknowledge;
+                initialMax = maximum;
+                initialPad = padding;
+
+                assert initialAck <= initialSeq;
+
+                doAppWindow(traceId, authorization, budgetId, (int)(initialSeq - initialAck), initialPad);
+            }
+
+            private void onNetReset(
+                ResetFW reset)
+            {
+                final long traceId = reset.traceId();
+                final long authorization = reset.authorization();
+
+                doAppReset(traceId, authorization);
+            }
+
+            private void onNetChallenge(
+                ChallengeFW challenge)
+            {
+                final long traceId = challenge.traceId();
+                final long authorization = challenge.authorization();
+                final OctetsFW extension = challenge.extension();
+
+                doAppChallenge(traceId, authorization, extension);
+            }
+
+            // @return no bytes consumed to assemble websocket header
+            private int assembleHeader(
+                DirectBuffer buffer,
+                int offset,
+                int length)
+            {
+                int remaining = Math.min(length, MAXIMUM_HEADER_SIZE - headerLength);
+                // may copy more than actual header length (up to max header length), but will adjust at the end
+                header.putBytes(headerLength, buffer, offset, remaining);
+
+                int consumed = remaining;
+                if (headerLength + remaining >= 2)
                 {
-                    consumed = wsHeaderLength - headerLength;
+                    int wsHeaderLength = wsHeaderLength(header);
+                    // eventual headLength must not be more than wsHeaderLength
+                    if (headerLength + remaining > wsHeaderLength)
+                    {
+                        consumed = wsHeaderLength - headerLength;
+                    }
                 }
+
+                headerLength += consumed;
+                return consumed;
             }
 
-            headerLength += consumed;
-            return consumed;
-        }
-
-        private int decodeHeader(
-            final DirectBuffer buffer,
-            final int offset,
-            final int length)
-        {
-            int consumed;
-
-            WsHeaderFW wsHeader;
-            if (headerLength > 0 || length < MAXIMUM_HEADER_SIZE)
+            private int decodeHeader(
+                final DirectBuffer buffer,
+                final int offset,
+                final int length)
             {
-                consumed = assembleHeader(buffer, offset, length);
-                if (headerLength >= 2 && headerLength == wsHeaderLength(header))
+                int consumed;
+
+                WsHeaderFW wsHeader;
+                if (headerLength > 0 || length < MAXIMUM_HEADER_SIZE)
                 {
-                    wsHeader = wsHeaderRO.wrap(header, 0, headerLength);
-                    headerLength = 0;
+                    consumed = assembleHeader(buffer, offset, length);
+                    if (headerLength >= 2 && headerLength == wsHeaderLength(header))
+                    {
+                        wsHeader = wsHeaderRO.wrap(header, 0, headerLength);
+                        headerLength = 0;
+                    }
+                    else
+                    {
+                        return consumed;            // partial header
+                    }
                 }
                 else
                 {
-                    return consumed;            // partial header
-                }
-            }
-            else
-            {
-                // No need to assemble header as complete header is available
-                wsHeader = wsHeaderRO.wrap(buffer, offset, offset + MAXIMUM_HEADER_SIZE);
-                consumed = wsHeader.sizeof();
-            }
-
-            if (wsHeader.mask() && wsHeader.maskingKey() != 0L)
-            {
-                doReset(decodeTraceId, decodeAuthorization);
-                accept.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
-            }
-            else
-            {
-                this.maskingKey = 0;
-                this.payloadLength = wsHeader.length();
-                this.payloadProgress = 0;
-
-                switch (wsHeaderRO.opcode())
-                {
-                case 0x00:
-                    this.decodeState = this::decodeContinuation;
-                    break;
-                case 0x01:
-                    this.decodeState = this::decodeText;
-                    break;
-                case 0x02:
-                    this.decodeState = this::decodeBinary;
-                    break;
-                case 0x08:
-                    this.decodeState = this::decodeClose;
-                    break;
-                case 0x0a:
-                    this.decodeState = this::decodePong;
-                    break;
-                default:
-                    this.decodeState = this::decodeUnexpected;
-                    break;
-                }
-            }
-
-            return consumed;
-        }
-
-        private int decodeContinuation(
-            final DirectBuffer buffer,
-            final int offset,
-            final int length)
-        {
-
-            // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
-
-            final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
-
-            final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
-            accept.doData(decodeTraceId, 0x80, maskingKey, payload);
-
-            payloadProgress += decodeBytes;
-            maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
-
-            if (payloadProgress == payloadLength)
-            {
-                this.decodeState = this::decodeHeader;
-            }
-
-            return decodeBytes;
-        }
-
-        private int decodeText(
-            final DirectBuffer buffer,
-            final int offset,
-            final int length)
-        {
-            // TODO canWrap for UTF-8 split multi-byte characters
-
-            // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
-
-            final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
-
-            final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
-            accept.doData(decodeTraceId, 0x81, maskingKey, payload);
-
-            payloadProgress += decodeBytes;
-            maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
-
-            if (payloadProgress == payloadLength)
-            {
-                this.decodeState = this::decodeHeader;
-            }
-
-            return decodeBytes;
-        }
-
-        private int decodeBinary(
-            final DirectBuffer buffer,
-            final int offset,
-            final int length)
-        {
-            // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
-
-            final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
-
-            final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
-            accept.doData(decodeTraceId, 0x82, maskingKey, payload);
-
-            payloadProgress += decodeBytes;
-            maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
-
-            if (payloadProgress == payloadLength)
-            {
-                this.decodeState = this::decodeHeader;
-            }
-
-            return decodeBytes;
-        }
-
-        private int rotateMaskingKey(
-            int maskingKey,
-            int decodeBytes)
-        {
-            decodeBytes = decodeBytes % 4;
-            int left;
-            int right;
-            if (nativeOrder() == BIG_ENDIAN)
-            {
-                left = decodeBytes * 8;
-                right = Integer.SIZE - left;
-            }
-            else
-            {
-                right = decodeBytes * 8;
-                left = Integer.SIZE - right;
-            }
-            return (maskingKey << left) | (maskingKey >>> right);
-        }
-
-        private int decodeClose(
-            final DirectBuffer buffer,
-            final int offset,
-            final int length)
-        {
-            if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
-            {
-                doReset(decodeTraceId, decodeAuthorization);
-                accept.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
-                return length;
-            }
-            else
-            {
-                final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
-                payloadProgress += decodeBytes;
-
-                int remaining = Math.min(length, 2 - statusLength);
-                if (remaining > 0)
-                {
-                    status.putBytes(statusLength, buffer, offset, remaining);
-                    statusLength += remaining;
+                    // No need to assemble header as complete header is available
+                    wsHeader = wsHeaderRO.wrap(buffer, offset, offset + MAXIMUM_HEADER_SIZE);
+                    consumed = wsHeader.sizeof();
                 }
 
-                if (payloadProgress == payloadLength)
+                if (wsHeader.mask() && wsHeader.maskingKey() != 0L)
                 {
-                    short code = STATUS_NORMAL_CLOSURE;
-                    if (statusLength == 2)
+                    doNetReset(decodeTraceId, decodeAuthorization);
+                    doAppAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
+                }
+                else
+                {
+                    this.maskingKey = 0;
+                    this.payloadLength = wsHeader.length();
+                    this.payloadProgress = 0;
+
+                    switch (wsHeaderRO.opcode())
                     {
-                        xor(status, 0, 2, maskingKey);
-                        code = status.getShort(0, ByteOrder.BIG_ENDIAN);
+                    case 0x00:
+                        this.decodeState = this::decodeContinuation;
+                        break;
+                    case 0x01:
+                        this.decodeState = this::decodeText;
+                        break;
+                    case 0x02:
+                        this.decodeState = this::decodeBinary;
+                        break;
+                    case 0x08:
+                        this.decodeState = this::decodeClose;
+                        break;
+                    case 0x0a:
+                        this.decodeState = this::decodePong;
+                        break;
+                    default:
+                        this.decodeState = this::decodeUnexpected;
+                        break;
                     }
-                    statusLength = 0;
-                    accept.doEnd(decodeTraceId, decodeAuthorization, code);
-                    this.accept = null;
-                    this.decodeState = this::decodeUnexpected;
                 }
 
-                return decodeBytes;
+                return consumed;
             }
-        }
 
-        private int decodePong(
-            final DirectBuffer buffer,
-            final int offset,
-            final int length)
-        {
-            if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+            private int decodeContinuation(
+                final DirectBuffer buffer,
+                final int offset,
+                final int length)
             {
-                doReset(decodeTraceId, decodeAuthorization);
-                accept.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
-                return length;
-            }
-            else
-            {
+
+                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
                 final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
 
-                payloadRO.wrap(buffer, offset, offset + decodeBytes);
+                final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
+                doAppData(decodeTraceId, 0x80, maskingKey, payload);
 
                 payloadProgress += decodeBytes;
                 maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
@@ -1516,21 +1256,158 @@ public final class WsClientFactory implements StreamFactory
 
                 return decodeBytes;
             }
-        }
 
-        private int decodeUnexpected(
-            final DirectBuffer directBuffer,
-            final int offset,
-            final int length)
-        {
-            doReset(decodeTraceId, decodeAuthorization);
-            accept.doAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
-            return length;
+            private int decodeText(
+                final DirectBuffer buffer,
+                final int offset,
+                final int length)
+            {
+                // TODO canWrap for UTF-8 split multi-byte characters
+
+                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
+                final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
+
+                final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
+                doAppData(decodeTraceId, 0x81, maskingKey, payload);
+
+                payloadProgress += decodeBytes;
+                maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                return decodeBytes;
+            }
+
+            private int decodeBinary(
+                final DirectBuffer buffer,
+                final int offset,
+                final int length)
+            {
+                // TODO: limit acceptReply bytes by acceptReply window, or RESET on overflow?
+
+                final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
+
+                final OctetsFW payload = payloadRO.wrap(buffer, offset, offset + decodeBytes);
+                doAppData(decodeTraceId, 0x82, maskingKey, payload);
+
+                payloadProgress += decodeBytes;
+                maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
+
+                if (payloadProgress == payloadLength)
+                {
+                    this.decodeState = this::decodeHeader;
+                }
+
+                return decodeBytes;
+            }
+
+            private int rotateMaskingKey(
+                int maskingKey,
+                int decodeBytes)
+            {
+                decodeBytes = decodeBytes % 4;
+                int left;
+                int right;
+                if (nativeOrder() == BIG_ENDIAN)
+                {
+                    left = decodeBytes * 8;
+                    right = Integer.SIZE - left;
+                }
+                else
+                {
+                    right = decodeBytes * 8;
+                    left = Integer.SIZE - right;
+                }
+                return (maskingKey << left) | (maskingKey >>> right);
+            }
+
+            private int decodeClose(
+                final DirectBuffer buffer,
+                final int offset,
+                final int length)
+            {
+                if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+                {
+                    doNetReset(decodeTraceId, decodeAuthorization);
+                    doAppAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
+                    return length;
+                }
+                else
+                {
+                    final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
+                    payloadProgress += decodeBytes;
+
+                    int remaining = Math.min(length, 2 - statusLength);
+                    if (remaining > 0)
+                    {
+                        status.putBytes(statusLength, buffer, offset, remaining);
+                        statusLength += remaining;
+                    }
+
+                    if (payloadProgress == payloadLength)
+                    {
+                        short code = STATUS_NORMAL_CLOSURE;
+                        if (statusLength == 2)
+                        {
+                            xor(status, 0, 2, maskingKey);
+                            code = status.getShort(0, ByteOrder.BIG_ENDIAN);
+                        }
+                        statusLength = 0;
+                        doAppEnd(decodeTraceId, decodeAuthorization, code);
+                        this.decodeState = this::decodeUnexpected;
+                    }
+
+                    return decodeBytes;
+                }
+            }
+
+            private int decodePong(
+                final DirectBuffer buffer,
+                final int offset,
+                final int length)
+            {
+                if (payloadLength > MAXIMUM_CONTROL_FRAME_PAYLOAD_SIZE)
+                {
+                    doNetReset(decodeTraceId, decodeAuthorization);
+                    doAppAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
+                    return length;
+                }
+                else
+                {
+                    final int decodeBytes = Math.min(length, payloadLength - payloadProgress);
+
+                    payloadRO.wrap(buffer, offset, offset + decodeBytes);
+
+                    payloadProgress += decodeBytes;
+                    maskingKey = rotateMaskingKey(maskingKey, decodeBytes);
+
+                    if (payloadProgress == payloadLength)
+                    {
+                        this.decodeState = this::decodeHeader;
+                    }
+
+                    return decodeBytes;
+                }
+            }
+
+            private int decodeUnexpected(
+                final DirectBuffer directBuffer,
+                final int offset,
+                final int length)
+            {
+                doNetReset(decodeTraceId, decodeAuthorization);
+                doAppAbort(decodeTraceId, decodeAuthorization, STATUS_PROTOCOL_ERROR);
+                return length;
+            }
         }
     }
 
-    private void doHttpBegin(
-        MessageConsumer receiver,
+    private MessageConsumer doHttpBegin(
+        MessageConsumer sender,
         long routeId,
         long streamId,
         long sequence,
@@ -1553,7 +1430,12 @@ public final class WsClientFactory implements StreamFactory
                 .extension(e -> e.set(visitHttpBeginEx(mutator)))
                 .build();
 
+        MessageConsumer receiver =
+                streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
+
         receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
+
+        return receiver;
     }
 
     private Flyweight.Builder.Visitor visitHttpBeginEx(

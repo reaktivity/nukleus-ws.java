@@ -15,7 +15,8 @@
  */
 package org.reaktivity.nukleus.ws.internal;
 
-import org.reaktivity.nukleus.Nukleus;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.Nukleus;
 
 public final class WsNukleus implements Nukleus
 {
@@ -42,8 +43,9 @@ public final class WsNukleus implements Nukleus
     }
 
     @Override
-    public WsElektron supplyElektron()
+    public WsElektron supplyElektron(
+        ElektronContext context)
     {
-        return new WsElektron(config);
+        return new WsElektron(config, context);
     }
 }
